@@ -1,5 +1,5 @@
 {
-  "name": "ellen",
+  "name": "tohka",
   "version": "alpha-1.0",
   "description": "WhatsApp multi Device, updated with better performance",
   "main": "index.js",
@@ -31,7 +31,6 @@
     "npm": ">=10.9.4"
   },
   "dependencies": {
-    "archiver": "^5.3.1",
     "localtunnel": "^2.0.2",
     "puppeteer": "latest",
     "libsignal": "latest",
@@ -67,11 +66,7 @@
     "yt-search": "^2.10.4",
     "pg": "^8.11.3",
     "@ffmpeg-installer/ffmpeg": "latest",
-    "ytdl-core": "^4.11.5",
-    "pg": "^8.11.3",
-    "@ffmpeg-installer/ffmpeg": "latest",
-    "ytdl-core": "^4.11.5",
-    "@napi-rs/canvas": "^0.1.65"
+    "ytdl-core": "^4.11.5"
   },
   "allowScripts": {
     "protobufjs@7.6.6": true
