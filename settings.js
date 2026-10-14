@@ -3,7 +3,7 @@ import { watchFile, unwatchFile } from 'fs'
 import { fileURLToPath } from 'url'
 
 global.owner = ['393715279301', //Mai
-'573015200599', //mai
+'393715279301', //mai
 '5491128178894', //netherlord
 '593989068253', //Bryan
 '593981607650', //Bryan2
