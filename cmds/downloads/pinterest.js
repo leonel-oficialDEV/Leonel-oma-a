@@ -1,132 +1,189 @@
+import yts from 'yt-search'
 import fetch from 'node-fetch'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
 
-const execFileAsync = promisify(execFile)
-
-export default {
-  command: ['pinterest', 'pin'],
+const cmd = {
+  command: [
+    'play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio',
+    'play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'
+  ],
   category: 'downloads',
-  description: 'Buscar y descarga imágenes y videos de Pinterest.',
+  description: 'Descargar audio (MP3) o video (MP4) de YouTube por nombre o URL.',
+
   run: async ({ msg, sock, args, usedPrefix, command }) => {
-    const text = args.join(' ').trim()
-    if (!text) return msg.reply('《✧》 Por favor, ingresa un término de búsqueda o un enlace de Pinterest.')
-    const evogbUrl = global.APIs?.evogb?.url || 'https://api.evogb.org'
-    const evogbKey = global.APIs?.evogb?.key
-    const deliriusUrl = global.APIs?.delirius?.url
     try {
-      if (/^https?:\/\//i.test(text)) {
-        const data = await pinterestDownload(text, evogbUrl, evogbKey, deliriusUrl)
-        if (!data?.url) return msg.reply('《✧》 No se pudo obtener el contenido del enlace.')
-        const caption = `ㅤ۟∩ ׅ ★ ׅ 🅟𝖨𝖭 🅓ownload ׄᰙ \n\n${data.title? `𖣣ֶㅤ֯⌗ ☆  ⬭ *Título* › ${data.title}\n` : ''}${data.author? `𖣣ֶㅤ֯⌗ ☆  ⬭ *Autor* › ${data.author}\n` : ''}${data.username? `𖣣ֶㅤ֯⌗ ☆  ⬭ *Usuario* › ${data.username}\n` : ''}${data.uploadDate? `𖣣ֶㅤ֯⌗ ☆  ⬭ *Fecha* › ${data.uploadDate}\n` : ''}𖣣ֶㅤ֯⌗ ☆  ⬭ *Enlace* › ${text}`
-        const isVideo = data.type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(data.url)
-        if (isVideo) {
-          const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pinterest-'))
-          const input = path.join(tempDir, 'input.mp4')
-          const output = path.join(tempDir, 'output.mp4')
-          try {
-            const res = await fetch(data.url)
-            if (!res.ok) throw new Error('No se pudo descargar el video')
-            fs.writeFileSync(input, Buffer.from(await res.arrayBuffer()))
-            try {
-              await execFileAsync('ffmpeg', ['-y','-i',input,'-c:v','libx264','-preset','veryfast','-crf','23','-c:a','aac','-movflags','+faststart',output])
-              await sock.sendMessage(msg.chat, { video: fs.readFileSync(output), caption, mimetype:'video/mp4', fileName:'pinterest.mp4' }, { quoted: msg })
-            } catch {
-              await sock.sendMessage(msg.chat, { video: fs.readFileSync(input), caption, mimetype:'video/mp4', fileName:'pinterest.mp4' }, { quoted: msg })
-            }
-          } finally { try { fs.rmSync(tempDir, { recursive:true, force:true }) } catch {} }
-        } else {
-          const buf = await getBuffer(data.url)
-          await sock.sendMessage(msg.chat, { image: buf? buf : { url: data.url }, caption }, { quoted: msg })
+      if (!args[0]) {
+        return msg.reply('《✧》Por favor, menciona el nombre o URL del video que deseas descargar.')
+      }
+
+      const isVideoCommand = /^(play2|mp4|ytmp4|ytvideo|playvideo)$/i.test(command)
+      const input_text = args.join(' ').trim()
+      const video_id = getVideoId(input_text)
+      const query = video_id ? `https://youtu.be/${video_id}` : input_text
+
+      let url = query
+      let title = isVideoCommand ? 'video' : 'audio'
+      let thumbnail = null
+
+      try {
+        const video_info = await getVideoInfo(query, video_id)
+
+        if (video_info) {
+          url = video_info.url || `https://youtu.be/${video_info.videoId}`
+          title = video_info.title || title
+          thumbnail = video_info.image || video_info.thumbnail || null
+
+          const views = Number(video_info.views || 0).toLocaleString('es-HN')
+          const channel = video_info.author?.name || video_info.author || 'Desconocido'
+          const formatText = isVideoCommand ? 'Video (MP4)' : 'Audio (MP3)'
+
+          const info_message = `➩ Descargando ${formatText} › *${title}*
+
+> ❖ Canal › *${channel}*
+> ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
+> ❀ Vistas › *${views}*
+> ✩ Publicado › *${video_info.ago || 'Desconocido'}*
+> ❒ Enlace › *${url}*`
+
+          if (thumbnail) {
+            await sock.sendMessage(msg.chat, {
+              image: { url: thumbnail },
+              caption: info_message
+            }, { quoted: msg })
+          } else {
+            await msg.reply(info_message)
+          }
         }
+      } catch {}
+
+      if (!isYTUrl(url)) {
+        return msg.reply('《✧》No se encontró un video válido de YouTube.')
+      }
+
+      if (isVideoCommand) {
+        const video = await getVideoFromApi(url)
+
+        if (!video?.buffer?.length) {
+          return msg.reply('《✧》No se pudo descargar el *video*, intenta más tarde.')
+        }
+
+        await sock.sendMessage(msg.chat, {
+          video: video.buffer,
+          fileName: video.name || `${title}.mp4`,
+          mimetype: 'video/mp4'
+        }, { quoted: msg })
       } else {
-        const results = await pinterestSearch(text, evogbUrl, evogbKey)
-        if (!results.length) return msg.reply(`《✧》 No se encontraron resultados para *${text}*.`)
-        const medias = results.slice(0, 15).map(r => ({
-          type: 'image',
-          data: { url: r.image },
-          caption: `ㅤ۟∩ ׅ ★ ׅ 🅟𝖨𝖭 🅢earch ׄᰙ \n\n${r.title? `𖣣ֶㅤ֯⌗ ☆  ⬭ *Título* › ${r.title}\n` : ''}𖣣ֶㅤ֯⌗ ☆  ⬭ *Búsqueda* › ${text}\n`
-        }))
-        await sock.sendAlbumMessage(msg.chat, medias, { quoted: msg })
+        const audio = await getAudioFromApi(url)
+
+        if (!audio?.buffer?.length) {
+          return msg.reply('《✧》No se pudo descargar el *audio*, intenta más tarde.')
+        }
+
+        await sock.sendMessage(msg.chat, {
+          audio: audio.buffer,
+          fileName: audio.name || `${title}.mp3`,
+          mimetype: 'audio/mpeg'
+        }, { quoted: msg })
       }
     } catch (e) {
-      await msg.reply(`> Ocurrió un error al ejecutar el comando *${usedPrefix + command}*.\n> [Error: *${e.message}*]`)
+      await msg.reply(
+        `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+      )
     }
   }
 }
 
-async function pinterestDownload(url, evogbUrl, evogbKey, deliriusUrl) {
-  const endpoints = []
-  if (evogbUrl) endpoints.push(`${evogbUrl.replace(/\/$/, '')}/dl/pinterest?url=${encodeURIComponent(url)}${evogbKey? `&key=${evogbKey}` : ''}`)
-  if (deliriusUrl) endpoints.push(`${deliriusUrl}/download/pinterestdl?url=${encodeURIComponent(url)}`)
-  for (const endpoint of endpoints) {
-    try {
-      const r = await fetch(endpoint)
-      if (!r.ok) continue
-      const res = await r.json()
-      let dlUrl = null
-      let rawType = 'image'
-      let meta = {}
-      if (res?.status && res?.data?.dl) {
-        dlUrl = res.data.dl
-        rawType = res.data.type
-        meta = res.data
-      } else if (res?.status && res?.data?.download?.url) {
-        dlUrl = res.data.download.url
-        rawType = res.data.download.type
-        meta = res.data
-      }
-      if (dlUrl) {
-        const isVideoByUrl = /\.(mp4|mov|webm|m3u8)(\?|$)/i.test(dlUrl) || dlUrl.includes('pinimg.com/videos') || dlUrl.includes('v.pinimg')
-        const isVideoByType = String(rawType).toLowerCase().includes('video')
-        const finalType = (isVideoByUrl || isVideoByType) ? 'video' : 'image'
-        return { type: finalType, url: dlUrl, title: meta.title, author: meta.author || meta.author_name, username: meta.username, uploadDate: meta.uploadDate || meta.upload }
-      }
-    } catch {}
+export default cmd
+
+const isYTUrl = (url = '') =>
+  /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
+
+const getVideoId = (text = '') => {
+  const raw = String(text || '').trim()
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw
+
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    if (match?.[1]) return match[1]
   }
   return null
 }
 
-async function pinterestSearch(query, evogbUrl, evogbKey) {
-  const cleanUrl = evogbUrl.replace(/\/$/, '')
-  const tries = [
-    `${cleanUrl}/search/pinterest?key=${evogbKey}&q=${encodeURIComponent(query)}`,
-    `${cleanUrl}/search/pinterest?key=${evogbKey}&query=${encodeURIComponent(query)}`,
-    `${cleanUrl}/search/pinterest?key=${evogbKey}&text=${encodeURIComponent(query)}`,
-    `${cleanUrl}/search/pinterestv3?key=${evogbKey}&q=${encodeURIComponent(query)}`,
-    `${cleanUrl}/search/pinterestv3?key=${evogbKey}&query=${encodeURIComponent(query)}`
-  ]
-  for (const endpoint of tries) {
+async function getVideoInfo(input, video_id) {
+  if (video_id) {
     try {
-      const r = await fetch(endpoint)
-      if (!r.ok) continue
-      const res = await r.json()
-      if (res?.status && Array.isArray(res.data) && res.data.length) {
-        const out = res.data.map(p => ({
-          image: p.hd || p.mini || p.image,
-          title: p.title !== '-' ? p.title : query
-        })).filter(x => x.image)
-        if (out.length) return out
-      }
-      if (res?.status && res?.data?.images?.length) {
-        const out = res.data.images.map(p => ({
-          image: p.images?.orig || p.images?.['736x'] || p.images?.['474x'],
-          title: p.title || query
-        })).filter(x => x.image)
-        if (out.length) return out
+      const info = await yts({ videoId: video_id })
+      if (info?.videoId) {
+        return {
+          ...info,
+          url: `https://youtu.be/${info.videoId}`,
+          image: info.thumbnail || info.image
+        }
       }
     } catch {}
   }
-  return []
+
+  const search = await yts(input)
+  return search.videos?.[0] || search.all?.find(v => v.type === 'video') || null
 }
 
-async function getBuffer(url) {
-  try {
-    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', 'referer': 'https://www.pinterest.com/' } })
-    if (!res.ok) return null
-    return Buffer.from(await res.arrayBuffer())
-  } catch { return null }
+async function getAudioFromApi(url) {
+  const api_url = `https://mediahub-software-api.vercel.app/api/public/download/ytmp3?url=${encodeURIComponent(url)}`
+
+  const res = await fetch(api_url, {
+    headers: { 'accept': 'application/json' }
+  })
+
+  if (!res.ok) throw new Error(`API falló: HTTP ${res.status}`)
+
+  const json = await res.json()
+
+  if (!json?.status || !json?.data?.download) {
+    throw new Error('No se encontró el enlace de descarga en la API.')
+  }
+
+  const audio_res = await fetch(json.data.download)
+  if (!audio_res.ok) throw new Error(`No se pudo descargar el audio: HTTP ${audio_res.status}`)
+
+  const buffer = await audio_res.buffer()
+
+  return {
+    buffer,
+    name: `${json.data.title || 'audio'}.mp3`
+  }
+}
+
+async function getVideoFromApi(url) {
+  const api_url = `https://api.evogb.org/dl/ytmp4?url=${encodeURIComponent(url)}&quality=720&key=Jotaa.hrzkey`
+
+  const res = await fetch(api_url, {
+    headers: { 'accept': 'application/json' }
+  })
+
+  if (!res.ok) throw new Error(`API falló: HTTP ${res.status}`)
+
+  const json = await res.json()
+
+  if (!json?.status || !json?.data?.dl) {
+    throw new Error('No se encontró el enlace de descarga en la API.')
+  }
+
+  const video_res = await fetch(json.data.dl)
+  if (!video_res.ok) throw new Error(`No se pudo descargar el video: HTTP ${video_res.status}`)
+
+  const buffer = await video_res.buffer()
+
+  return {
+    buffer,
+    name: `${json.data.title || 'video'}.mp4`
+  }
 }
