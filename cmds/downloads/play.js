@@ -137,7 +137,7 @@ async function getVideoInfo(input, video_id) {
 }
 
 async function getAudioFromApi(url) {
-  const api_url = `https://mediahub-software-api.vercel.app/api/public/download/ytmp3?url=${encodeURIComponent(url)}`
+  const api_url = `https://api.delirius.online/download/ytmp3?url=${encodeURIComponent(url)}`
 
   const res = await fetch(api_url, {
     headers: { 'accept': 'application/json' }
