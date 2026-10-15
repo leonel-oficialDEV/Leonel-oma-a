@@ -1,179 +1,189 @@
-import fetch from 'node-fetch'
 import yts from 'yt-search'
-import { getBuffer } from '#serialize'
+import fetch from 'node-fetch'
 
-async function getSpotifyLink(text) {
-  try {
-    const evoUrl = global.APIs?.evogb?.url
-    const evoKey = global.APIs?.evogb?.key
-    const endpoint = `${evoUrl}/search/spotify?query=${encodeURIComponent(text)}&key=${encodeURIComponent(evoKey)}`
-    const res = await fetch(endpoint).then(r => r.json())
-    if (res?.status && res.result?.[0]) return res.result[0]
-  } catch {}
+const cmd = {
+  command: [
+    'play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio',
+    'play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'
+  ],
+  category: 'downloads',
+  description: 'Descargar audio (MP3) o video (MP4) de YouTube por nombre o URL.',
+
+  run: async ({ msg, sock, args, usedPrefix, command }) => {
+    try {
+      if (!args[0]) {
+        return msg.reply('《✧》Por favor, menciona el nombre o URL del video que deseas descargar.')
+      }
+
+      const isVideoCommand = /^(play2|mp4|ytmp4|ytvideo|playvideo)$/i.test(command)
+      const input_text = args.join(' ').trim()
+      const video_id = getVideoId(input_text)
+      const query = video_id ? `https://youtu.be/${video_id}` : input_text
+
+      let url = query
+      let title = isVideoCommand ? 'video' : 'audio'
+      let thumbnail = null
+
+      try {
+        const video_info = await getVideoInfo(query, video_id)
+
+        if (video_info) {
+          url = video_info.url || `https://youtu.be/${video_info.videoId}`
+          title = video_info.title || title
+          thumbnail = video_info.image || video_info.thumbnail || null
+
+          const views = Number(video_info.views || 0).toLocaleString('es-HN')
+          const channel = video_info.author?.name || video_info.author || 'Desconocido'
+          const formatText = isVideoCommand ? 'Video (MP4)' : 'Audio (MP3)'
+
+          const info_message = `➩ Descargando ${formatText} › *${title}*
+
+> ❖ Canal › *${channel}*
+> ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
+> ❀ Vistas › *${views}*
+> ✩ Publicado › *${video_info.ago || 'Desconocido'}*
+> ❒ Enlace › *${url}*`
+
+          if (thumbnail) {
+            await sock.sendMessage(msg.chat, {
+              image: { url: thumbnail },
+              caption: info_message
+            }, { quoted: msg })
+          } else {
+            await msg.reply(info_message)
+          }
+        }
+      } catch {}
+
+      if (!isYTUrl(url)) {
+        return msg.reply('《✧》No se encontró un video válido de YouTube.')
+      }
+
+      if (isVideoCommand) {
+        const video = await getVideoFromApi(url)
+
+        if (!video?.buffer?.length) {
+          return msg.reply('《✧》No se pudo descargar el *video*, intenta más tarde.')
+        }
+
+        await sock.sendMessage(msg.chat, {
+          video: video.buffer,
+          fileName: video.name || `${title}.mp4`,
+          mimetype: 'video/mp4'
+        }, { quoted: msg })
+      } else {
+        const audio = await getAudioFromApi(url)
+
+        if (!audio?.buffer?.length) {
+          return msg.reply('《✧》No se pudo descargar el *audio*, intenta más tarde.')
+        }
+
+        await sock.sendMessage(msg.chat, {
+          audio: audio.buffer,
+          fileName: audio.name || `${title}.mp3`,
+          mimetype: 'audio/mpeg'
+        }, { quoted: msg })
+      }
+    } catch (e) {
+      await msg.reply(
+        `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+      )
+    }
+  }
+}
+
+export default cmd
+
+const isYTUrl = (url = '') =>
+  /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
+
+const getVideoId = (text = '') => {
+  const raw = String(text || '').trim()
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw
+
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    if (match?.[1]) return match[1]
+  }
   return null
 }
 
-async function getYtLink(text) {
-  try {
-    const res = await yts(text)
-    return res?.videos?.[0] || null
-  } catch { return null }
-}
-
-async function getAudioMedia(type, url) {
-  try {
-    const evoUrl = global.APIs?.evogb?.url
-    const evoKey = global.APIs?.evogb?.key
-    const endpoint = type === 'spotify'
-   ? `${evoUrl}/dl/spotify?url=${encodeURIComponent(url)}&key=${encodeURIComponent(evoKey)}`
-      : `${evoUrl}/dl/ytmp3?url=${encodeURIComponent(url)}&key=${encodeURIComponent(evoKey)}`
-    const res = await fetch(endpoint).then(r => r.json())
-    const d = res?.data || res?.result || res
-    return d?.url || d?.dl || d?.download || null
-  } catch { return null }
-}
-
-const isYtUrl = (t) => /(youtube\.com|youtu\.be)/i.test(t)
-const isSpotifyUrl = (t) => /open\.spotify\.com/i.test(t)
-
-export default {
-  command: ['play','mp3','playaudio','ytaudio', 'spotif'],
-  category: 'downloader',
-  run: async ({ sock, msg, args, text, usedPrefix, command }) => {
+async function getVideoInfo(input, video_id) {
+  if (video_id) {
     try {
-      const isChannel = msg.chat.endsWith('@newsletter')
-      const options = isChannel? undefined : { quoted: msg }
-      const chatId = msg.chat
-      const q = text?.trim()
-
-      if (!q) {
-        return sock.sendMessage(msg.chat, { text: '《✧》 Por favor, menciona el nombre o URL de YouTube o Spotify que deseas descargar.' }, options)
-      }
-
-      await sock.sendMessage(chatId, { react: { text: '🕒', key: msg.key } })
-
-      // --- URL DIRECTA: DESCARGA SIN PREGUNTAR ---
-      if (isYtUrl(q) || isSpotifyUrl(q)) {
-        const type = isSpotifyUrl(q) ? 'spotify' : 'yt'
-        const dlUrl = await getAudioMedia(type, q)
-
-        if (!dlUrl) {
-          await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } })
-          return sock.sendMessage(chatId, { text: '《✧》 No se pudo obtener el audio de la URL.' }, options)
-        }
-
-        await sock.sendMessage(chatId, {
-          audio: { url: dlUrl },
-          fileName: `${type}_${Date.now()}.mp3`,
-          mimetype: 'audio/mpeg'
-        }, options)
-
-        return sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } })
-      }
-
-      // --- BÚSQUEDA: PREGUNTA YT / SPOTIFY ---
-      const [ytInfo, spInfo] = await Promise.all([
-        getYtLink(q),
-        getSpotifyLink(q)
-      ])
-
-      if (!ytInfo &&!spInfo) {
-        return sock.sendMessage(chatId, { text: '《✧》 No se encontraron resultados' }, options)
-      }
-
-      const title = ytInfo?.title || spInfo?.title || q
-      const thumb = ytInfo?.thumbnail || spInfo?.image || null
-      const ytUrl = ytInfo?.url || null
-      const spotifyUrl = spInfo?.link || null
-      const author = ytInfo?.author?.name || spInfo?.artist || 'Desconocido'
-      const duration = ytInfo?.timestamp || 'Desconocido'
-      const vistas = ytInfo? (ytInfo.views || 0).toLocaleString() : null
-
-      let infoMessage = `➩ Descargando › ${title}\n\n`
-      infoMessage += `> ❖ Canal › *${author}*\n`
-      infoMessage += `> ⴵ Duración › *${duration}*\n`
-      if (vistas) infoMessage += `> ❀ Vistas › *${vistas}*\n`
-      if (ytUrl) infoMessage += `> ❒ YouTube › *${ytUrl}*\n`
-      if (spotifyUrl) infoMessage += `> ❒ Spotify › *${spotifyUrl}*\n`
-      infoMessage += `\n*Responde a este mensaje con:*\n> *spotify* para Spotify\n> *yt* para YouTube`
-
-      let sent
-      if (thumb) {
-        try {
-          const thumbBuffer = await getBuffer(thumb)
-          sent = await sock.sendMessage(chatId, { image: thumbBuffer, caption: infoMessage }, options)
-        } catch {
-          sent = await sock.sendMessage(chatId, { text: infoMessage }, options)
-        }
-      } else {
-        sent = await sock.sendMessage(chatId, { text: infoMessage }, options)
-      }
-
-      const sentId = sent.key.id
-      const requesterId = msg.key.participant || msg.key.remoteJid
-      let uses = 0
-      const maxUses = 2
-
-      const collector = async (upsert) => {
-        try {
-          const m = upsert.messages?.[0]
-          if (!m || m.key.fromMe) return
-          if (m.key.remoteJid!== chatId) return
-
-          const senderId = m.key.participant || m.key.remoteJid
-          const isOwner = senderId === requesterId || m.key.remoteJid === requesterId || (msg.sender && senderId.includes(msg.sender.split('@')[0]))
-          if (!isOwner && chatId.endsWith('@g.us')) return
-
-          const mText = (m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.extendedTextMessage?.caption || '').toLowerCase().trim()
-          if (!['spotify', 'yt', 'youtube'].includes(mText)) return
-
-          const ctx = m.message?.extendedTextMessage?.contextInfo
-          if (ctx?.stanzaId !== sentId) return
-          if (uses >= maxUses) {
-            sock.ev.off('messages.upsert', collector)
-            return
-          }
-
-          uses++
-          const type = mText === 'spotify'? 'spotify' : 'yt'
-          const urlToDl = type === 'spotify'? spotifyUrl : ytUrl
-
-          if (!urlToDl) {
-            await sock.sendMessage(chatId, { text: `《✧》 No hay link de ${type}` }, { quoted: m })
-            if (uses >= maxUses) sock.ev.off('messages.upsert', collector)
-            return
-          }
-
-          await sock.sendMessage(chatId, { react: { text: '🕒', key: m.key } })
-          const dlUrl = await getAudioMedia(type, urlToDl)
-
-          if (!dlUrl) {
-            await sock.sendMessage(chatId, { text: '《✧》 No se pudo obtener el audio, intenta con la otra opción' }, { quoted: m })
-            if (uses >= maxUses) sock.ev.off('messages.upsert', collector)
-            return
-          }
-
-          await sock.sendMessage(chatId, {
-            audio: { url: dlUrl },
-            fileName: `${title}.mp3`,
-            mimetype: 'audio/mpeg'
-          }, { quoted: m })
-
-          await sock.sendMessage(chatId, { react: { text: '✅', key: m.key } })
-          if (uses >= maxUses) sock.ev.off('messages.upsert', collector)
-
-        } catch (e) {
-          console.log('[play collector]', e)
+      const info = await yts({ videoId: video_id })
+      if (info?.videoId) {
+        return {
+          ...info,
+          url: `https://youtu.be/${info.videoId}`,
+          image: info.thumbnail || info.image
         }
       }
+    } catch {}
+  }
 
-      sock.ev.on('messages.upsert', collector)
-      setTimeout(() => { try { sock.ev.off('messages.upsert', collector) } catch {} }, 900000)
+  const search = await yts(input)
+  return search.videos?.[0] || search.all?.find(v => v.type === 'video') || null
+}
 
-      await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } })
+async function getAudioFromApi(url) {
+  const api_url = `https://mediahub-software-api.vercel.app/api/public/download/ytmp3?url=${encodeURIComponent(url)}`
 
-    } catch (e) {
-      await sock.sendMessage(msg.chat, { text: `> Error: ${e.message}` }, { quoted: msg })
-    }
+  const res = await fetch(api_url, {
+    headers: { 'accept': 'application/json' }
+  })
+
+  if (!res.ok) throw new Error(`API falló: HTTP ${res.status}`)
+
+  const json = await res.json()
+
+  if (!json?.status || !json?.data?.download) {
+    throw new Error('No se encontró el enlace de descarga en la API.')
+  }
+
+  const audio_res = await fetch(json.data.download)
+  if (!audio_res.ok) throw new Error(`No se pudo descargar el audio: HTTP ${audio_res.status}`)
+
+  const buffer = await audio_res.buffer()
+
+  return {
+    buffer,
+    name: `${json.data.title || 'audio'}.mp3`
+  }
+}
+
+async function getVideoFromApi(url) {
+  const api_url = `https://api.evogb.org/dl/ytmp4?url=${encodeURIComponent(url)}&quality=720&key=Jotaa.hrzkey`
+
+  const res = await fetch(api_url, {
+    headers: { 'accept': 'application/json' }
+  })
+
+  if (!res.ok) throw new Error(`API falló: HTTP ${res.status}`)
+
+  const json = await res.json()
+
+  if (!json?.status || !json?.data?.dl) {
+    throw new Error('No se encontró el enlace de descarga en la API.')
+  }
+
+  const video_res = await fetch(json.data.dl)
+  if (!video_res.ok) throw new Error(`No se pudo descargar el video: HTTP ${video_res.status}`)
+
+  const buffer = await video_res.buffer()
+
+  return {
+    buffer,
+    name: `${json.data.title || 'video'}.mp4`
   }
 }
