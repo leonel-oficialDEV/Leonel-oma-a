@@ -71,7 +71,7 @@ export default {
 
       let menu = `> *¡ʜᴏʟᴀ!* ${msg.pushName}, como está tu día?, mucho gusto mi nombre es *${namebot2}* ʚ♡⃛ɞ(ू•ᴗ•ू❁)*\n\n` +
       ` ⌒࣪᷼⏜͡ ۪ ࿚ꨪᰰ࿙ ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ ࿚ꨪᰰ࿙ ۪ ͡⏜ׄ᷼⌒\n\n` +
-      `: ̗̀〄 *ᴅᴇᴠᴇʟᴏᴘᴇʀ ::* 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™\n` +
+      `: ̗̀〄 *Channel ::* https://whatsapp.com/channel/0029Vagdmfv1SWt5nfdR4z3w\n` +
       `: ̗̀☕︎ *ᴏᴡɴᴇʀ ::* ${dev}\n` +
       `: ̗̀ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
       `: ̗̀☄︎ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n\n` +
