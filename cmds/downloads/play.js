@@ -4,7 +4,6 @@ import fetch from 'node-fetch'
 const cmd = {
   command: [
     'play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio',
-    'play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'
   ],
   category: 'downloads',
   description: 'Descargar audio (MP3) o video (MP4) de YouTube por nombre o URL.',
