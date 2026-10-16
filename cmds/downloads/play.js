@@ -1,29 +1,30 @@
 import yts from 'yt-search'
+import { getBuffer } from '#serialize'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import { spawn } from 'child_process'
 
-const DIR = './descargas-yt'
-const DB_FILE = path.join(DIR, 'play.json')
-const YTDLP = './yt-dlp'
-const COOKIES = '/home/container/cookies.txt'
+const DOWNLOAD_DIR = path.resolve('./descargas-yt')
+const DATABASE_FILE = path.join(DOWNLOAD_DIR, 'play.json')
+const YTDLP_PATH = path.resolve('./yt-dlp')
+const COOKIES_PATH = '/home/container/cookies.txt'
 
-const descargasActivas = new Map()
+fs.mkdirSync(DOWNLOAD_DIR, { recursive: true })
+
+let ytDlp
 const socketsRegistrados = new WeakSet()
+const descargasActivas = new Set()
 
-fs.mkdirSync(DIR, { recursive: true })
-
-function cargarBaseDatos() {
+function leerBaseDatos() {
   try {
-    if (!fs.existsSync(DB_FILE)) {
+    if (!fs.existsSync(DATABASE_FILE)) {
       fs.writeFileSync(
-        DB_FILE,
+        DATABASE_FILE,
         JSON.stringify({ mensajes: {}, completadas: {} }, null, 2)
       )
     }
 
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
+    const data = JSON.parse(fs.readFileSync(DATABASE_FILE, 'utf8'))
 
     return {
       mensajes: data.mensajes || {},
@@ -34,207 +35,255 @@ function cargarBaseDatos() {
   }
 }
 
-let baseDatos = cargarBaseDatos()
+let baseDatos = leerBaseDatos()
 
 function guardarBaseDatos() {
-  const temporal = `${DB_FILE}.tmp`
+  const temporal = `${DATABASE_FILE}.tmp`
 
   fs.writeFileSync(temporal, JSON.stringify(baseDatos, null, 2))
-  fs.renameSync(temporal, DB_FILE)
+  fs.renameSync(temporal, DATABASE_FILE)
+}
+
+async function cargarYtDlp() {
+  if (ytDlp) return ytDlp
+
+  const modulo = await import('yt-dlp-wrap-plus')
+  const YTDlpWrap =
+    modulo.default?.default ||
+    modulo.default ||
+    modulo.YTDlpWrap
+
+  if (!YTDlpWrap) {
+    throw new Error('No se pudo cargar yt-dlp-wrap-plus.')
+  }
+
+  ytDlp = new YTDlpWrap(YTDLP_PATH)
+  return ytDlp
+}
+
+function limpiarTexto(texto = '') {
+  return String(texto)
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 150)
+}
+
+function obtenerVideoId(url = '') {
+  try {
+    const parsed = new URL(url)
+
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.split('/').filter(Boolean)[0] || url
+    }
+
+    if (parsed.searchParams.get('v')) {
+      return parsed.searchParams.get('v')
+    }
+
+    const partes = parsed.pathname.split('/').filter(Boolean)
+
+    if (['shorts', 'embed', 'live'].includes(partes[0])) {
+      return partes[1] || url
+    }
+
+    return url
+  } catch {
+    return url
+  }
+}
+
+function claveDescarga(chatId, videoId, tipo) {
+  return `${chatId}:${videoId}:${tipo}`
+}
+
+function claveMensaje(chatId, messageId) {
+  return `${chatId}:${messageId}`
+}
+
+function formatearDuracion(segundos = 0) {
+  segundos = Number(segundos) || 0
+
+  const horas = Math.floor(segundos / 3600)
+  const minutos = Math.floor((segundos % 3600) / 60)
+  const segundosRestantes = Math.floor(segundos % 60)
+
+  if (horas) {
+    return `${horas}:${String(minutos).padStart(2, '0')}:${String(segundosRestantes).padStart(2, '0')}`
+  }
+
+  return `${minutos}:${String(segundosRestantes).padStart(2, '0')}`
 }
 
 function obtenerTexto(msg) {
-  const m = msg.message || {}
-
   return (
-    m.conversation ||
-    m.extendedTextMessage?.text ||
-    m.imageMessage?.caption ||
-    m.videoMessage?.caption ||
-    m.documentMessage?.caption ||
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.imageMessage?.caption ||
+    msg.message?.videoMessage?.caption ||
     ''
   ).trim()
 }
 
-function obtenerContexto(msg) {
-  const m = msg.message || {}
+async function buscarVideo(texto) {
+  const resultado = await yts(texto)
 
-  return (
-    m.extendedTextMessage?.contextInfo ||
-    m.imageMessage?.contextInfo ||
-    m.videoMessage?.contextInfo ||
-    m.documentMessage?.contextInfo ||
-    m.buttonsResponseMessage?.contextInfo ||
-    m.templateButtonReplyMessage?.contextInfo ||
-    null
-  )
+  if (!resultado.videos?.length) {
+    throw new Error('No se encontraron resultados.')
+  }
+
+  return resultado.videos[0]
 }
 
-function limpiarNombre(nombre) {
-  return String(nombre || 'youtube')
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100) || 'youtube'
-}
+async function descargarArchivo(url, tipo) {
+  const downloader = await cargarYtDlp()
+  const id = crypto.randomBytes(8).toString('hex')
+  const salida = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`)
 
-function ejecutarYtDlp(args) {
-  return new Promise((resolve, reject) => {
-    const proceso = spawn(YTDLP, args, {
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-
-    let salida = ''
-    let error = ''
-
-    proceso.stdout.on('data', data => {
-      salida += data.toString()
-    })
-
-    proceso.stderr.on('data', data => {
-      error += data.toString()
-    })
-
-    proceso.on('error', reject)
-
-    proceso.on('close', codigo => {
-      if (codigo === 0) {
-        resolve({ salida, error })
-      } else {
-        reject(
-          new Error(
-            error.trim() ||
-            salida.trim() ||
-            `yt-dlp terminó con código ${codigo}`
-          )
-        )
-      }
-    })
-  })
-}
-
-async function descargarArchivo(url, tipo, id) {
-  const prefijo = path.join(DIR, `${id}`)
-  const plantilla = `${prefijo}.%(ext)s`
-
-  const args = [
+  const argumentos = [
+    url,
     '--no-playlist',
     '--no-warnings',
-    '--newline',
-    '--restrict-filenames'
+    '--no-part',
+    '--no-mtime',
+    '--js-runtimes',
+    'node',
+    '--remote-components',
+    'ejs:github',
+    '--output',
+    salida
   ]
 
-  if (fs.existsSync(COOKIES)) {
-    args.push('--cookies', COOKIES)
+  if (fs.existsSync(COOKIES_PATH)) {
+    argumentos.push('--cookies', COOKIES_PATH)
   }
 
   if (tipo === 'audio') {
-    args.push(
+    argumentos.push(
       '-f',
       'bestaudio[ext=m4a]/bestaudio',
-      '-x',
+      '--extract-audio',
       '--audio-format',
       'm4a',
       '--audio-quality',
-      '0',
-      '-o',
-      plantilla,
-      url
+      '0'
     )
   } else {
-    args.push(
+    argumentos.push(
       '-f',
       'best[ext=mp4][height<=720]/best[height<=720]/best',
       '--merge-output-format',
-      'mp4',
-      '-o',
-      plantilla,
-      url
+      'mp4'
     )
   }
 
-  await ejecutarYtDlp(args)
-
-  const archivo = fs.readdirSync(DIR).find(nombre =>
-    nombre.startsWith(`${id}.`) &&
-    !nombre.endsWith('.part') &&
-    !nombre.endsWith('.ytdl')
-  )
-
-  if (!archivo) {
-    throw new Error('No se encontró el archivo descargado.')
-  }
-
-  return path.join(DIR, archivo)
-}
-
-function borrarArchivo(archivo) {
   try {
-    if (archivo && fs.existsSync(archivo)) {
-      fs.unlinkSync(archivo)
+    await downloader.execPromise(argumentos)
+
+    const archivos = fs.readdirSync(DOWNLOAD_DIR)
+      .filter(nombre => nombre.startsWith(`${id}.`))
+      .map(nombre => path.join(DOWNLOAD_DIR, nombre))
+
+    if (!archivos.length) {
+      throw new Error('No se generó el archivo de descarga.')
     }
-  } catch {}
+
+    const archivo = archivos[0]
+
+    return {
+      buffer: fs.readFileSync(archivo),
+      archivo,
+      extension:
+        path.extname(archivo).slice(1) ||
+        (tipo === 'audio' ? 'm4a' : 'mp4')
+    }
+  } catch (error) {
+    for (const nombre of fs.readdirSync(DOWNLOAD_DIR)) {
+      if (nombre.startsWith(`${id}.`)) {
+        try {
+          fs.unlinkSync(path.join(DOWNLOAD_DIR, nombre))
+        } catch {}
+      }
+    }
+
+    throw error
+  }
 }
 
-function obtenerNumero(jid) {
-  return String(jid || '').split('@')[0].split(':')[0]
+function buscarRegistro(chatId, messageId) {
+  if (!messageId) return null
+  return baseDatos.mensajes[claveMensaje(chatId, messageId)] || null
 }
 
 async function procesarRespuesta(sock, msg) {
   const texto = obtenerTexto(msg).toLowerCase()
-  if (texto !== 'a' && texto !== 'v') return
+  if (!['a', 'v'].includes(texto)) return
 
-  const contexto = obtenerContexto(msg)
-  const idCitado = contexto?.stanzaId
+  const chatId = msg.key?.remoteJid
+  if (!chatId) return
 
-  if (!idCitado) return
+  const contexto =
+    msg.message?.extendedTextMessage?.contextInfo ||
+    msg.message?.imageMessage?.contextInfo ||
+    msg.message?.videoMessage?.contextInfo
 
-  const chatId = msg.key.remoteJid
-  const claveMensaje = `${chatId}:${idCitado}`
-  const registro = baseDatos.mensajes[claveMensaje]
+  const messageId = contexto?.stanzaId
+  if (!messageId) return
 
+  const registro = buscarRegistro(chatId, messageId)
   if (!registro) return
 
   const tipo = texto === 'a' ? 'audio' : 'video'
-  const clave = `${chatId}:${registro.videoId}:${tipo}`
-  const jidUsuario = msg.key.participant || msg.key.remoteJid
-  const numero = obtenerNumero(jidUsuario)
+  const clave = claveDescarga(chatId, registro.videoId, tipo)
 
-  const completada = baseDatos.completadas[clave]
+  const jidUsuario =
+    msg.key?.participant ||
+    msg.key?.remoteJid
 
-  if (completada || registro[tipo] === 'completada') {
-    const mensajeGuardado = completada?.messageKey
-    const mensajeCitado = completada?.quotedMessage
+  const numero = String(jidUsuario || '')
+    .split('@')[0]
+    .split(':')[0]
 
-    const opcionesCita = mensajeGuardado
-      ? {
-          key: mensajeGuardado,
-          message: mensajeCitado || (
-            tipo === 'audio'
-              ? {
-                  audioMessage: {
-                    mimetype: 'audio/mp4',
-                    fileName: `${limpiarNombre(registro.titulo)}.m4a`
-                  }
-                }
-              : {
-                  videoMessage: {
-                    mimetype: 'video/mp4',
-                    fileName: `${limpiarNombre(registro.titulo)}.mp4`
-                  }
-                }
-          )
-        }
-      : msg
+  if (
+    baseDatos.completadas[clave] ||
+    registro[tipo] === 'completada'
+  ) {
+    const completada = baseDatos.completadas[clave]
+
+    const mediaKey =
+      completada?.messageKey ||
+      registro[`${tipo}MessageKey`]
+
+    const mediaMessage =
+      completada?.quotedMessage ||
+      registro[`${tipo}QuotedMessage`]
+
+    const mensajeCitado =
+      mediaKey && mediaMessage
+        ? {
+            key: mediaKey,
+            message: mediaMessage
+          }
+        : msg
 
     await sock.sendMessage(
       chatId,
       {
         text: `《✧》 La descarga de ${tipo} de este video ya fue procesada. Aquí está la descarga @${numero}`,
-        mentions: [jidUsuario]
+        mentions: jidUsuario ? [jidUsuario] : []
       },
-      { quoted: opcionesCita }
+      { quoted: mensajeCitado }
     )
+
+    if (!completada) {
+      baseDatos.completadas[clave] = {
+        titulo: registro.titulo,
+        url: registro.url,
+        fecha: Date.now()
+      }
+
+      guardarBaseDatos()
+    }
 
     return
   }
@@ -243,8 +292,7 @@ async function procesarRespuesta(sock, msg) {
     await sock.sendMessage(
       chatId,
       {
-        text: `《✧》 La descarga de ${tipo} ya está en proceso. Espera a que termine.`,
-        mentions: [jidUsuario]
+        text: `《✧》 La descarga de ${tipo} ya está en proceso. Espera a que termine y vuelve a intentarlo si fuera necesario.`
       },
       { quoted: msg }
     )
@@ -252,206 +300,217 @@ async function procesarRespuesta(sock, msg) {
     return
   }
 
-  descargasActivas.set(clave, true)
-  registro[tipo] = 'descargando'
+  descargasActivas.add(clave)
+  registro[tipo] = 'procesando'
   guardarBaseDatos()
 
-  let archivo
+  let archivoDescargado
 
   try {
-    await sock.sendMessage(
-      chatId,
-      { react: { text: '🕒', key: msg.key } }
-    )
+    await sock.sendMessage(chatId, {
+      react: { text: '🕒', key: msg.key }
+    })
 
-    const idArchivo = crypto.randomBytes(8).toString('hex')
-    archivo = await descargarArchivo(registro.url, tipo, idArchivo)
+    archivoDescargado = await descargarArchivo(registro.url, tipo)
 
-    const buffer = fs.readFileSync(archivo)
-    const nombre = limpiarNombre(registro.titulo)
+    const nombre = limpiarTexto(registro.titulo) || tipo
+    const duracion = Number(registro.duracion) || 0
+    const comoDocumento = duracion > 1200
 
     let enviado
 
     if (tipo === 'audio') {
       enviado = await sock.sendMessage(
         chatId,
-        {
-          audio: buffer,
-          mimetype: 'audio/mp4',
-          fileName: `${nombre}.m4a`,
-          ptt: false
-        },
+        comoDocumento
+          ? {
+              document: archivoDescargado.buffer,
+              mimetype: 'audio/mp4',
+              fileName: `${nombre}.${archivoDescargado.extension}`,
+              caption: `➩ ${registro.titulo}`
+            }
+          : {
+              audio: archivoDescargado.buffer,
+              mimetype: 'audio/mp4',
+              fileName: `${nombre}.${archivoDescargado.extension}`
+            },
         { quoted: msg }
       )
     } else {
       enviado = await sock.sendMessage(
         chatId,
-        {
-          video: buffer,
-          mimetype: 'video/mp4',
-          fileName: `${nombre}.mp4`,
-          caption: `❒ ${registro.titulo}`
-        },
+        comoDocumento
+          ? {
+              document: archivoDescargado.buffer,
+              mimetype: 'video/mp4',
+              fileName: `${nombre}.${archivoDescargado.extension}`,
+              caption: `➩ ${registro.titulo}`
+            }
+          : {
+              video: archivoDescargado.buffer,
+              mimetype: `video/mp4`,
+              fileName: `${nombre}.${archivoDescargado.extension}`,
+              caption: `➩ ${registro.titulo}`
+            },
         { quoted: msg }
       )
     }
 
     registro[tipo] = 'completada'
-    registro[`${tipo}MessageKey`] = enviado.key
-    registro[`${tipo}QuotedMessage`] = enviado.message
+    registro[`${tipo}MessageKey`] = enviado?.key || null
+    registro[`${tipo}QuotedMessage`] = enviado?.message || null
 
     baseDatos.completadas[clave] = {
       tipo,
-      messageKey: enviado.key,
-      quotedMessage: enviado.message,
+      titulo: registro.titulo,
+      url: registro.url,
+      messageKey: enviado?.key || null,
+      quotedMessage: enviado?.message || null,
       fecha: Date.now()
     }
 
     guardarBaseDatos()
 
-    await sock.sendMessage(
-      chatId,
-      { react: { text: '✅', key: msg.key } }
-    )
+    await sock.sendMessage(chatId, {
+      react: { text: '✅', key: msg.key }
+    })
   } catch (error) {
     registro[tipo] = 'pendiente'
     guardarBaseDatos()
 
-    await sock.sendMessage(
-      chatId,
-      {
-        text: `《✧》 No se pudo descargar el ${tipo}.\n\n> ❖ Detalle: ${String(error.message || error).slice(0, 700)}`
-      },
-      { quoted: msg }
-    )
+    await sock.sendMessage(chatId, {
+      react: { text: '❌', key: msg.key }
+    }).catch(() => {})
 
     await sock.sendMessage(
       chatId,
-      { react: { text: '❌', key: msg.key } }
+      {
+        text: `《✧》 No se pudo descargar el ${tipo}. Puedes responder otra vez *${texto}* a la respuesta original para reintentarlo.\n\n> Error: ${String(error?.message || error).slice(0, 400)}`
+      },
+      { quoted: msg }
     ).catch(() => {})
   } finally {
-    borrarArchivo(archivo)
     descargasActivas.delete(clave)
+
+    if (archivoDescargado?.archivo) {
+      try {
+        fs.unlinkSync(archivoDescargado.archivo)
+      } catch {}
+    }
   }
 }
 
 function registrarEscucha(sock) {
   if (socketsRegistrados.has(sock)) return
-
   socketsRegistrados.add(sock)
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages || []) {
+      if (!msg.message || msg.key?.fromMe) continue
+
       try {
-        if (!msg?.message || msg.key?.fromMe) continue
         await procesarRespuesta(sock, msg)
       } catch (error) {
-        console.error('Error procesando respuesta de YouTube:', error)
+        console.error('[play collector]', error)
       }
     }
   })
 }
 
 export default {
-  command: ['play', 'play2', 'playvid', 'ytplay', 'playaudio'],
+  command: ['play', 'mp3', 'playaudio', 'ytaudio', 'play2', 'playvid'],
   category: 'downloader',
 
   async before({ sock }) {
-    registrarEscucha(sock)
+    if (sock) registrarEscucha(sock)
   },
 
   run: async ({ sock, msg, args, text, usedPrefix, command }) => {
-    registrarEscucha(sock)
-
-    const consulta = String(text || args?.join(' ') || '').trim()
-
-    if (!consulta) {
-      return sock.sendMessage(
-        msg.key.remoteJid,
-        {
-          text: `《✧》 Escribe el nombre de una canción o un enlace de YouTube.\n\n> Ejemplo: ${usedPrefix}${command} nombre de la canción`
-        },
-        { quoted: msg }
-      )
-    }
-
-    const chatId = msg.key.remoteJid
+    const chatId = msg.chat || msg.key?.remoteJid
+    const isChannel = chatId?.endsWith('@newsletter')
+    const options = isChannel ? undefined : { quoted: msg }
+    const q = (text || args?.join(' ') || '').trim()
 
     try {
-      await sock.sendMessage(
-        chatId,
-        { react: { text: '🕒', key: msg.key } }
-      )
+      registrarEscucha(sock)
 
-      let video
+      if (!q) {
+        return sock.sendMessage(
+          chatId,
+          {
+            text: '《✧》 Por favor, menciona el nombre o URL de YouTube que deseas descargar.'
+          },
+          options
+        )
+      }
 
-      if (/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(consulta)) {
-        const resultado = await yts(consulta)
-        video = resultado.videos?.[0]
+      await sock.sendMessage(chatId, {
+        react: { text: '🕒', key: msg.key }
+      })
 
-        if (!video) {
-          const id = consulta.match(
-            /(?:youtu\.be\/|v=|shorts\/|embed\/)([A-Za-z0-9_-]{11})/
-          )?.[1]
+      const video = await buscarVideo(q)
+      const title = video.title || q
+      const thumb = video.thumbnail || null
+      const ytUrl = video.url
+      const author = video.author?.name || 'Desconocido'
+      const duration = video.timestamp || formatearDuracion(video.seconds)
+      const vistas = Number(video.views || 0).toLocaleString()
 
-          if (id) {
-            video = {
-              videoId: id,
-              url: `https://www.youtube.com/watch?v=${id}`,
-              title: 'Video de YouTube',
-              author: { name: 'YouTube' },
-              timestamp: 'Desconocida',
-              views: 0,
-              thumbnail: ''
-            }
-          }
+      let infoMessage = `➩ Descargando › ${title}\n\n`
+      infoMessage += `> ❖ Canal › *${author}*\n`
+      infoMessage += `> ⴵ Duración › *${duration}*\n`
+      infoMessage += `> ❀ Vistas › *${vistas}*\n`
+      infoMessage += `> ❒ YouTube › *${ytUrl}*\n`
+      infoMessage += '\n*Responde a este mensaje con:*\n'
+      infoMessage += '> *a* para descargar audio\n'
+      infoMessage += '> *v* para descargar video'
+
+      let sent
+
+      if (thumb) {
+        try {
+          const thumbBuffer = await getBuffer(thumb)
+
+          sent = await sock.sendMessage(
+            chatId,
+            {
+              image: thumbBuffer,
+              caption: infoMessage
+            },
+            options
+          )
+        } catch {
+          sent = await sock.sendMessage(
+            chatId,
+            { text: infoMessage },
+            options
+          )
         }
       } else {
-        const resultado = await yts(consulta)
-        video = resultado.videos?.[0]
+        sent = await sock.sendMessage(
+          chatId,
+          { text: infoMessage },
+          options
+        )
       }
 
-      if (!video?.videoId || !video?.url) {
-        throw new Error('No se encontró ningún video con esa búsqueda.')
+      const sentId = sent?.key?.id
+
+      if (!sentId) {
+        throw new Error('No se pudo obtener el ID del mensaje enviado.')
       }
 
-      const ytUrl = video.url
-      const titulo = video.title || 'Video de YouTube'
-      const autor = video.author?.name || 'Desconocido'
-      const duracion = video.timestamp || 'Desconocida'
-      const vistas = Number(video.views || 0).toLocaleString('es')
-      const solicitante = msg.key.participant || msg.key.remoteJid
+      const videoId = obtenerVideoId(ytUrl)
+      const clave = claveMensaje(chatId, sentId)
 
-      const caption = [
-        `➩ Descargando › ${titulo}`,
-        '',
-        `> ❖ Canal › *${autor}*`,
-        `> ⴵ Duración › *${duracion}*`,
-        `> ❀ Vistas › *${vistas}*`,
-        `> ❒ YouTube › *${ytUrl}*`,
-        '',
-        'Responde a este mensaje con:',
-        '',
-        '➩ *a* para descargar audio',
-        '➩ *v* para descargar video'
-      ].join('\n')
-
-      const enviado = await sock.sendMessage(
+      baseDatos.mensajes[clave] = {
         chatId,
-        { text: caption },
-        { quoted: msg }
-      )
-
-      const claveMensaje = `${chatId}:${enviado.key.id}`
-
-      baseDatos.mensajes[claveMensaje] = {
-        chatId,
-        messageId: enviado.key.id,
-        videoId: video.videoId,
+        messageId: sentId,
+        videoId,
         url: ytUrl,
-        titulo,
-        duracion,
-        solicitante,
+        titulo: title,
+        duracion: video.seconds || 0,
+        solicitante: msg.key?.participant || msg.key?.remoteJid,
         creado: Date.now(),
         audio: 'pendiente',
         video: 'pendiente'
@@ -459,22 +518,18 @@ export default {
 
       guardarBaseDatos()
 
-      await sock.sendMessage(
-        chatId,
-        { react: { text: '✅', key: msg.key } }
-      )
+      await sock.sendMessage(chatId, {
+        react: { text: '✅', key: msg.key }
+      })
     } catch (error) {
-      await sock.sendMessage(
-        chatId,
-        {
-          text: `《✧》 Ocurrió un error al buscar el video.\n\n> ❖ Detalle: ${String(error.message || error).slice(0, 700)}`
-        },
-        { quoted: msg }
-      )
+      await sock.sendMessage(chatId, {
+        react: { text: '❌', key: msg.key }
+      }).catch(() => {})
 
       await sock.sendMessage(
         chatId,
-        { react: { text: '❌', key: msg.key } }
+        { text: `《✧》 Error: ${error.message}` },
+        options
       ).catch(() => {})
     }
   }
