@@ -39,9 +39,27 @@ let baseDatos = leerBaseDatos()
 
 function guardarBaseDatos() {
   const temporal = `${DATABASE_FILE}.tmp`
-
   fs.writeFileSync(temporal, JSON.stringify(baseDatos, null, 2))
   fs.renameSync(temporal, DATABASE_FILE)
+}
+
+function desenvolverMensaje(msg) {
+  let mensaje = msg?.message
+
+  for (let i = 0; i < 8 && mensaje; i++) {
+    const envoltura =
+      mensaje.ephemeralMessage ||
+      mensaje.viewOnceMessage ||
+      mensaje.viewOnceMessageV2 ||
+      mensaje.viewOnceMessageV2Extension ||
+      mensaje.documentWithCaptionMessage ||
+      mensaje.deviceSentMessage
+
+    if (!envoltura?.message) break
+    mensaje = envoltura.message
+  }
+
+  return mensaje || {}
 }
 
 async function cargarYtDlp() {
@@ -116,13 +134,39 @@ function formatearDuracion(segundos = 0) {
 }
 
 function obtenerTexto(msg) {
+  const mensaje = desenvolverMensaje(msg)
+
   return (
-    msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.imageMessage?.caption ||
-    msg.message?.videoMessage?.caption ||
+    mensaje.conversation ||
+    mensaje.extendedTextMessage?.text ||
+    mensaje.imageMessage?.caption ||
+    mensaje.videoMessage?.caption ||
+    mensaje.documentMessage?.caption ||
+    mensaje.buttonsResponseMessage?.selectedButtonId ||
+    mensaje.templateButtonReplyMessage?.selectedId ||
+    mensaje.listResponseMessage?.singleSelectReply?.selectedRowId ||
     ''
   ).trim()
+}
+
+function obtenerContexto(msg) {
+  const mensaje = desenvolverMensaje(msg)
+
+  return (
+    mensaje.extendedTextMessage?.contextInfo ||
+    mensaje.imageMessage?.contextInfo ||
+    mensaje.videoMessage?.contextInfo ||
+    mensaje.documentMessage?.contextInfo ||
+    mensaje.audioMessage?.contextInfo ||
+    mensaje.buttonsResponseMessage?.contextInfo ||
+    mensaje.templateButtonReplyMessage?.contextInfo ||
+    mensaje.listResponseMessage?.contextInfo ||
+    null
+  )
+}
+
+function obtenerChatId(msg) {
+  return msg?.key?.remoteJid || msg?.chat || null
 }
 
 async function buscarVideo(texto) {
@@ -216,21 +260,24 @@ function buscarRegistro(chatId, messageId) {
 }
 
 async function procesarRespuesta(sock, msg) {
-  const texto = obtenerTexto(msg).toLowerCase()
+  const texto = obtenerTexto(msg).trim().toLowerCase()
+
   if (!['a', 'v'].includes(texto)) return
 
-  const chatId = msg.key?.remoteJid
+  const chatId = obtenerChatId(msg)
   if (!chatId) return
 
-  const contexto =
-    msg.message?.extendedTextMessage?.contextInfo ||
-    msg.message?.imageMessage?.contextInfo ||
-    msg.message?.videoMessage?.contextInfo
-
+  const contexto = obtenerContexto(msg)
   const messageId = contexto?.stanzaId
+
   if (!messageId) return
 
-  const registro = buscarRegistro(chatId, messageId)
+  let registro = buscarRegistro(chatId, messageId)
+
+  if (!registro && chatId !== msg.key?.remoteJid) {
+    registro = buscarRegistro(msg.key?.remoteJid, messageId)
+  }
+
   if (!registro) return
 
   const tipo = texto === 'a' ? 'audio' : 'video'
@@ -238,7 +285,8 @@ async function procesarRespuesta(sock, msg) {
 
   const jidUsuario =
     msg.key?.participant ||
-    msg.key?.remoteJid
+    msg.key?.remoteJid ||
+    msg.participant
 
   const numero = String(jidUsuario || '')
     .split('@')[0]
@@ -277,8 +325,11 @@ async function procesarRespuesta(sock, msg) {
 
     if (!completada) {
       baseDatos.completadas[clave] = {
+        tipo,
         titulo: registro.titulo,
         url: registro.url,
+        messageKey: registro[`${tipo}MessageKey`] || null,
+        quotedMessage: registro[`${tipo}QuotedMessage`] || null,
         fecha: Date.now()
       }
 
@@ -348,7 +399,7 @@ async function procesarRespuesta(sock, msg) {
             }
           : {
               video: archivoDescargado.buffer,
-              mimetype: `video/mp4`,
+              mimetype: 'video/mp4',
               fileName: `${nombre}.${archivoDescargado.extension}`,
               caption: `➩ ${registro.titulo}`
             },
@@ -401,12 +452,13 @@ async function procesarRespuesta(sock, msg) {
 }
 
 function registrarEscucha(sock) {
-  if (socketsRegistrados.has(sock)) return
+  if (!sock || socketsRegistrados.has(sock)) return
+
   socketsRegistrados.add(sock)
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages || []) {
-      if (!msg.message || msg.key?.fromMe) continue
+      if (!msg?.message || msg.key?.fromMe) continue
 
       try {
         await procesarRespuesta(sock, msg)
@@ -426,7 +478,7 @@ export default {
   },
 
   run: async ({ sock, msg, args, text, usedPrefix, command }) => {
-    const chatId = msg.chat || msg.key?.remoteJid
+    const chatId = obtenerChatId(msg)
     const isChannel = chatId?.endsWith('@newsletter')
     const options = isChannel ? undefined : { quoted: msg }
     const q = (text || args?.join(' ') || '').trim()
