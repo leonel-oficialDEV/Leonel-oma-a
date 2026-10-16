@@ -23,12 +23,11 @@ const ytDlp = new YTDlpWrap(YTDLP_PATH)
 
 let descargaActiva = false
 
-const crearArchivoTemporal = extension => {
-  return path.join(
+const crearArchivoTemporal = extension =>
+  path.join(
     '/tmp',
     `yt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${extension}`
   )
-}
 
 const descargarArchivo = async (url, formato, extension) => {
   const archivo = crearArchivoTemporal(extension)
@@ -84,30 +83,23 @@ const obtenerMiniatura = async url => {
   try {
     const buffer = await getBuffer(url)
 
-    if (!buffer?.length) {
-      return null
-    }
+    if (!buffer?.length) return null
 
     return await sharp(buffer)
-      .resize(300, 300, {
-        fit: 'cover'
-      })
-      .jpeg({
-        quality: 80
-      })
+      .resize(300, 300, { fit: 'cover' })
+      .jpeg({ quality: 80 })
       .toBuffer()
   } catch {
     return null
   }
 }
 
-const limpiarNombre = nombre => {
-  return String(nombre || 'youtube')
+const limpiarNombre = nombre =>
+  String(nombre || 'youtube')
     .replace(/[\\/:*?"<>|]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80) || 'youtube'
-}
 
 const isYtUrl = texto =>
   /^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(texto)
@@ -120,17 +112,12 @@ const obtenerVideo = async texto => {
 
     if (id) {
       const resultado = await yts({ videoId: id }).catch(() => null)
-
-      if (resultado?.title) {
-        return resultado
-      }
+      if (resultado?.title) return resultado
     }
 
     const busqueda = await yts(texto)
 
-    if (busqueda?.videos?.[0]) {
-      return busqueda.videos[0]
-    }
+    if (busqueda?.videos?.[0]) return busqueda.videos[0]
 
     throw new Error('No se encontró información del video.')
   }
@@ -156,16 +143,11 @@ const formatearVistas = vistas => {
 
 const formatearDuracion = duracion => {
   if (!duracion) return 'N/A'
-
-  if (typeof duracion === 'string') {
-    return duracion
-  }
+  if (typeof duracion === 'string') return duracion
 
   const segundos = Number(duracion)
 
-  if (!Number.isFinite(segundos)) {
-    return 'N/A'
-  }
+  if (!Number.isFinite(segundos)) return 'N/A'
 
   const horas = Math.floor(segundos / 3600)
   const minutos = Math.floor((segundos % 3600) / 60)
@@ -179,25 +161,16 @@ const formatearDuracion = duracion => {
 }
 
 const obtenerSegundos = video => {
-  if (typeof video.seconds === 'number') {
-    return video.seconds
-  }
-
-  if (typeof video.duration === 'number') {
-    return video.duration
-  }
+  if (typeof video.seconds === 'number') return video.seconds
+  if (typeof video.duration === 'number') return video.duration
 
   const duracion = video.timestamp || video.duration
 
-  if (typeof duracion !== 'string') {
-    return 0
-  }
+  if (typeof duracion !== 'string') return 0
 
   const partes = duracion.split(':').map(Number)
 
-  if (partes.some(Number.isNaN)) {
-    return 0
-  }
+  if (partes.some(Number.isNaN)) return 0
 
   if (partes.length === 3) {
     return partes[0] * 3600 + partes[1] * 60 + partes[2]
@@ -210,12 +183,114 @@ const obtenerSegundos = video => {
   return Number(partes[0]) || 0
 }
 
+const descargarYEnviar = async (sock, chatId, msg, video, tipo) => {
+  let archivo = null
+
+  try {
+    const title = limpiarNombre(video.title)
+    const segundos = obtenerSegundos(video)
+
+    await sock.sendMessage(chatId, {
+      react: { text: '🕒', key: msg.key }
+    })
+
+    if (tipo === 'audio') {
+      archivo = await descargarArchivo(
+        video.url,
+        'bestaudio[ext=m4a]/bestaudio',
+        'm4a'
+      )
+
+      const caption = segundos > 1200
+        ? `🎵 *${title}*\n\n> Duración: ${video.timestamp || 'N/A'}\n> YouTube`
+        : undefined
+
+      if (segundos > 1200) {
+        await sock.sendMessage(
+          chatId,
+          {
+            document: { url: archivo },
+            mimetype: 'audio/mp4',
+            fileName: `${title}.m4a`,
+            caption
+          },
+          { quoted: msg }
+        )
+      } else {
+        await sock.sendMessage(
+          chatId,
+          {
+            audio: { url: archivo },
+            mimetype: 'audio/mp4',
+            fileName: `${title}.m4a`
+          },
+          { quoted: msg }
+        )
+      }
+    } else {
+      archivo = await descargarArchivo(
+        video.url,
+        'best[ext=mp4][height<=720]/best[height<=720]/best',
+        'mp4'
+      )
+
+      const caption =
+        `🎬 *${title}*\n\n` +
+        `> Duración: ${video.timestamp || 'N/A'}\n` +
+        '> YouTube'
+
+      if (segundos > 1200) {
+        await sock.sendMessage(
+          chatId,
+          {
+            document: { url: archivo },
+            mimetype: 'video/mp4',
+            fileName: `${title}.mp4`,
+            caption
+          },
+          { quoted: msg }
+        )
+      } else {
+        await sock.sendMessage(
+          chatId,
+          {
+            video: { url: archivo },
+            mimetype: 'video/mp4',
+            fileName: `${title}.mp4`,
+            caption
+          },
+          { quoted: msg }
+        )
+      }
+    }
+
+    await sock.sendMessage(chatId, {
+      react: { text: '✅', key: msg.key }
+    })
+  } finally {
+    if (archivo) {
+      try {
+        if (fs.existsSync(archivo)) {
+          await fs.promises.unlink(archivo)
+        }
+      } catch {}
+    }
+  }
+}
+
 export default {
-  command: ['play', 'mp3', 'playaudio', 'ytaudio', 'spotif'],
+  command: [
+    'play',
+    'mp3',
+    'playaudio',
+    'ytaudio',
+    'play2',
+    'playvid'
+  ],
+
   category: 'downloader',
 
   run: async ({ sock, msg, args, text, usedPrefix, command }) => {
-    let archivo = null
     let collector = null
     let collectorTimeout = null
 
@@ -271,7 +346,8 @@ export default {
       infoMessage += `> ❀ Vistas › *${vistas}*\n`
       infoMessage += `> ❒ YouTube › *${ytUrl}*\n`
       infoMessage += '\n*Responde a este mensaje con:*\n'
-      infoMessage += '> *yt* para descargar el audio de YouTube'
+      infoMessage += '> *a* para descargar el audio de YouTube\n'
+      infoMessage += '> *v* para descargar el video'
 
       let sent
 
@@ -279,10 +355,7 @@ export default {
         try {
           sent = await sock.sendMessage(
             chatId,
-            {
-              image: thumb,
-              caption: infoMessage
-            },
+            { image: thumb, caption: infoMessage },
             options
           )
         } catch {
@@ -331,7 +404,7 @@ export default {
             ''
           ).toLowerCase().trim()
 
-          if (!['yt', 'youtube'].includes(mText)) return
+          if (!['a', 'audio', 'v', 'video'].includes(mText)) return
 
           const ctx = m.message?.extendedTextMessage?.contextInfo
 
@@ -345,52 +418,35 @@ export default {
 
           uses++
 
-          await sock.sendMessage(chatId, {
-            react: { text: '🕒', key: m.key }
-          })
+          const tipo = ['a', 'audio'].includes(mText)
+            ? 'audio'
+            : 'video'
 
-          let audioArchivo = null
-
-          try {
-            descargaActiva = true
-
-            audioArchivo = await descargarArchivo(
-              ytUrl,
-              'bestaudio[ext=m4a]/bestaudio',
-              'm4a'
-            )
-
+          if (descargaActiva) {
             await sock.sendMessage(
               chatId,
               {
-                audio: { url: audioArchivo },
-                fileName: `${title}.m4a`,
-                mimetype: 'audio/mp4'
+                text: '《✧》 Ya hay otra descarga en proceso, espera a que termine.'
               },
               { quoted: m }
             )
+            return
+          }
 
-            await sock.sendMessage(chatId, {
-              react: { text: '✅', key: m.key }
-            })
+          descargaActiva = true
+
+          try {
+            await descargarYEnviar(sock, chatId, m, video, tipo)
           } catch (e) {
             await sock.sendMessage(
               chatId,
               {
-                text: `《✧》 No se pudo descargar el audio.\n\n> Error: ${e?.message || e}`
+                text: `《✧》 No se pudo descargar el ${tipo}.\n\n> Error: ${e?.message || e}`
               },
               { quoted: m }
             )
           } finally {
             descargaActiva = false
-
-            if (audioArchivo) {
-              try {
-                if (fs.existsSync(audioArchivo)) {
-                  await fs.promises.unlink(audioArchivo)
-                }
-              } catch {}
-            }
           }
 
           if (uses >= maxUses) {
@@ -413,6 +469,7 @@ export default {
       await sock.sendMessage(chatId, {
         react: { text: '✅', key: msg.key }
       })
+
     } catch (e) {
       await sock.sendMessage(
         msg.chat,
