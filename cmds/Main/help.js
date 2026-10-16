@@ -71,7 +71,7 @@ export default {
 
       let menu = `> *¡ʜᴏʟᴀ!* ${msg.pushName}, como está tu día?, mucho gusto mi nombre es *${namebot2}* ʚ♡⃛ɞ(ू•ᴗ•ू❁)*\n\n` +
       ` ⌒࣪᷼⏜͡ ۪ ࿚ꨪᰰ࿙ ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ ࿚ꨪᰰ࿙ ۪ ͡⏜ׄ᷼⌒\n\n` +
-    
+
       `: ̗̀☕︎ *ᴏᴡɴᴇʀ ::* ${dev}\n` +
       `: ̗̀ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
       `: ̗̀☄︎ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n\n` +
@@ -132,7 +132,7 @@ export default {
       if (isVideo) {
         await sock.sendMessage(msg.chat, { video: { url: banner }, caption: menu.trim(), contextInfo: ctx }, { quoted: msg })
       } else {
-        const preview = link && banner ? await prepareWAMessageMedia({ image: { url: banner } }, { upload: sock.waUploadToServer, mediaTypeOverride: 'thumbnail-link' }).then(m => ({ 'canonical-url': link, 'matched-text': link, title: namebot, description: `${namebot2}, Built With 💜 By 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™ `, jpegThumbnail: m.imageMessage?.jpegThumbnail ? Buffer.from(m.imageMessage.jpegThumbnail) : undefined, highQualityThumbnail: m.imageMessage || undefined })) : undefined
+        const preview = link && banner ? await prepareWAMessageMedia({ image: { url: banner } }, { upload: sock.waUploadToServer, mediaTypeOverride: 'thumbnail-link' }).then(m => ({ 'canonical-url': 'https://whatsapp.com/channel/0029Vagdmfv1SWt5nfdR4z3w', 'matched-text': link, title: namebot, description: `${namebot2}, Built With 💜 By 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™ `, jpegThumbnail: m.imageMessage?.jpegThumbnail ? Buffer.from(m.imageMessage.jpegThumbnail) : undefined, highQualityThumbnail: m.imageMessage || undefined })) : undefined
         await sock.sendMessage(msg.chat, { text: menu.trim(), linkPreview: preview, contextInfo: ctx }, { quoted: msg })
       }
     } catch (e) {
