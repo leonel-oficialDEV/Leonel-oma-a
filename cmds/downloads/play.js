@@ -281,7 +281,7 @@ async function procesarRespuesta(sock, msg) {
   if (!registro) return
 
   const tipo = texto === 'a' ? 'audio' : 'video'
-  const clave = claveDescarga(chatId, registro.videoId, tipo)
+  const clave = claveDescarga(registro.chatId || chatId, registro.videoId, tipo)
 
   const jidUsuario =
     msg.key?.participant ||
@@ -458,7 +458,7 @@ function registrarEscucha(sock) {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages || []) {
-      if (!msg?.message || msg.key?.fromMe) continue
+      if (!msg?.message) continue
 
       try {
         await procesarRespuesta(sock, msg)
