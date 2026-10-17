@@ -8,8 +8,18 @@ const DOWNLOAD_DIR = path.resolve('./descargas-yt')
 const DATABASE_FILE = path.join(DOWNLOAD_DIR, 'play.json')
 const YTDLP_PATH = path.resolve('./yt-dlp')
 const COOKIES_PATH = '/home/container/cookies.txt'
+const YTDLP_TEMP_DIR = path.join(DOWNLOAD_DIR, '.yt-dlp-tmp')
+const MAX_INTENTOS_DESCARGA = 3
 
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true })
+fs.mkdirSync(YTDLP_TEMP_DIR, { recursive: true })
+process.env.TMPDIR = YTDLP_TEMP_DIR
+process.env.TMP = YTDLP_TEMP_DIR
+process.env.TEMP = YTDLP_TEMP_DIR
+
+try {
+  fs.chmodSync(YTDLP_TEMP_DIR, 0o700)
+} catch {}
 
 let ytDlp
 const socketsRegistrados = new WeakSet()
@@ -64,6 +74,12 @@ function desenvolverMensaje(msg) {
 
 async function cargarYtDlp() {
   if (ytDlp) return ytDlp
+
+  if (!fs.existsSync(YTDLP_PATH)) {
+    throw new Error(
+      `No se encontró el ejecutable yt-dlp en ${YTDLP_PATH}. Comprueba que esté instalado en el servidor.`
+    )
+  }
 
   const modulo = await import('yt-dlp-wrap-plus')
   const YTDlpWrap =
@@ -239,69 +255,8 @@ async function buscarVideo(texto) {
   return resultado.videos[0]
 }
 
-async function descargarArchivo(url, tipo) {
-  const downloader = await cargarYtDlp()
-  const id = crypto.randomBytes(8).toString('hex')
-  const salida = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`)
-
-  const argumentos = [
-    url,
-    '--no-playlist',
-    '--no-warnings',
-    '--no-part',
-    '--no-mtime',
-    '--js-runtimes',
-    'node',
-    '--remote-components',
-    'ejs:github',
-    '--output',
-    salida
-  ]
-
-  if (fs.existsSync(COOKIES_PATH)) {
-    argumentos.push('--cookies', COOKIES_PATH)
-  }
-
-  if (tipo === 'audio') {
-    argumentos.push(
-      '-f',
-      'bestaudio[ext=m4a]/bestaudio',
-      '--extract-audio',
-      '--audio-format',
-      'm4a',
-      '--audio-quality',
-      '0'
-    )
-  } else {
-    argumentos.push(
-      '-f',
-      'best[ext=mp4][height<=720]/best[height<=720]/best',
-      '--merge-output-format',
-      'mp4'
-    )
-  }
-
+function limpiarArchivosIntento(id) {
   try {
-    await downloader.execPromise(argumentos)
-
-    const archivos = fs.readdirSync(DOWNLOAD_DIR)
-      .filter(nombre => nombre.startsWith(`${id}.`))
-      .map(nombre => path.join(DOWNLOAD_DIR, nombre))
-
-    if (!archivos.length) {
-      throw new Error('No se generó el archivo de descarga.')
-    }
-
-    const archivo = archivos[0]
-
-    return {
-      buffer: fs.readFileSync(archivo),
-      archivo,
-      extension:
-        path.extname(archivo).slice(1) ||
-        (tipo === 'audio' ? 'm4a' : 'mp4')
-    }
-  } catch (error) {
     for (const nombre of fs.readdirSync(DOWNLOAD_DIR)) {
       if (nombre.startsWith(`${id}.`)) {
         try {
@@ -309,9 +264,117 @@ async function descargarArchivo(url, tipo) {
         } catch {}
       }
     }
+  } catch {}
+}
 
-    throw error
+function esperar(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function descargarArchivo(url, tipo) {
+  const downloader = await cargarYtDlp()
+  let ultimoError
+
+  for (let intento = 1; intento <= MAX_INTENTOS_DESCARGA; intento++) {
+    const id = crypto.randomBytes(8).toString('hex')
+    const salida = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`)
+
+    const argumentos = [
+      url,
+      '--no-playlist',
+      '--no-warnings',
+      '--no-part',
+      '--no-mtime',
+      '--no-cache-dir',
+      '--retries',
+      '5',
+      '--fragment-retries',
+      '5',
+      '--extractor-retries',
+      '3',
+      '--file-access-retries',
+      '3',
+      '--retry-sleep',
+      '2',
+      '--js-runtimes',
+      'node',
+      '--remote-components',
+      'ejs:github',
+      '--output',
+      salida
+    ]
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      argumentos.push('--cookies', COOKIES_PATH)
+    }
+
+    if (tipo === 'audio') {
+      argumentos.push(
+        '-f',
+        'bestaudio[ext=m4a]/bestaudio',
+        '--extract-audio',
+        '--audio-format',
+        'm4a',
+        '--audio-quality',
+        '0'
+      )
+    } else {
+      argumentos.push(
+        '-f',
+        'best[ext=mp4][height<=720]/best[height<=720]/best',
+        '--merge-output-format',
+        'mp4'
+      )
+    }
+
+    try {
+      // Garantiza que el directorio temporal siga disponible en cada intento.
+      fs.mkdirSync(YTDLP_TEMP_DIR, { recursive: true })
+
+      await downloader.execPromise(argumentos)
+
+      const archivos = fs.readdirSync(DOWNLOAD_DIR)
+        .filter(nombre => nombre.startsWith(`${id}.`))
+        .map(nombre => path.join(DOWNLOAD_DIR, nombre))
+        .filter(archivo => {
+          try {
+            return fs.statSync(archivo).isFile() &&
+              fs.statSync(archivo).size > 0
+          } catch {
+            return false
+          }
+        })
+
+      if (!archivos.length) {
+        throw new Error('yt-dlp terminó, pero no generó ningún archivo.')
+      }
+
+      const archivo = archivos.find(archivo =>
+        !/\.(part|ytdl|json|description|jpg|jpeg|png|webp)$/i.test(archivo)
+      ) || archivos[0]
+
+      return {
+        buffer: fs.readFileSync(archivo),
+        archivo,
+        extension:
+          path.extname(archivo).slice(1) ||
+          (tipo === 'audio' ? 'm4a' : 'mp4')
+      }
+    } catch (error) {
+      ultimoError = error
+      limpiarArchivosIntento(id)
+
+      if (intento < MAX_INTENTOS_DESCARGA) {
+        // Pausa progresiva antes de repetir la descarga.
+        await esperar(intento * 2000)
+      }
+    }
   }
+
+  const detalle = String(ultimoError?.message || ultimoError || 'Error desconocido')
+  throw new Error(
+    `La descarga falló después de ${MAX_INTENTOS_DESCARGA} intentos. ${detalle.slice(0, 700)}`
+  )
 }
 
 function buscarRegistro(chatId, messageId) {
@@ -445,7 +508,7 @@ async function procesarRespuesta(sock, msg) {
     await sock.sendMessage(
       chatId,
       {
-        text: `《✧》 No se pudo descargar el ${tipo}. Puedes responder otra vez *${texto}* a la respuesta original para reintentarlo.\n\n> Error: ${String(error?.message || error).slice(0, 400)}`
+        text: `《✧》 No se pudo descargar el ${tipo}. Puedes responder otra vez *${texto}* a la respuesta original para reintentarlo.\n\n> Error: ${String(error?.message || error).slice(0, 800)}`
       },
       { quoted: msg }
     ).catch(() => {})
