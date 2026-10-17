@@ -169,6 +169,66 @@ function obtenerChatId(msg) {
   return msg?.key?.remoteJid || msg?.chat || null
 }
 
+function normalizarJid(jid) {
+  if (!jid) return ''
+
+  return String(jid)
+    .split(':')[0]
+    .trim()
+    .toLowerCase()
+}
+
+function obtenerJidUsuario(msg, sock) {
+  const chatId = obtenerChatId(msg)
+
+  if (msg?.key?.fromMe) {
+    return normalizarJid(
+      sock?.user?.id ||
+      sock?.user?.jid ||
+      msg?.key?.participant ||
+      msg?.participant ||
+      ''
+    )
+  }
+
+  if (chatId?.endsWith('@g.us')) {
+    return normalizarJid(
+      msg?.key?.participant ||
+      msg?.participant ||
+      msg?.key?.participantAlt ||
+      ''
+    )
+  }
+
+  return normalizarJid(
+    msg?.key?.participant ||
+    msg?.participant ||
+    chatId ||
+    ''
+  )
+}
+
+function mismoUsuario(jidA, jidB) {
+  const a = normalizarJid(jidA)
+  const b = normalizarJid(jidB)
+
+  if (!a || !b) return false
+  if (a === b) return true
+
+  const esNumero = jid => jid.endsWith('@s.whatsapp.net')
+  const esLid = jid => jid.endsWith('@lid')
+
+  if (esNumero(a) && esNumero(b)) {
+    return a.split('@')[0] === b.split('@')[0]
+  }
+
+  if (esLid(a) && esLid(b)) {
+    return a.split('@')[0] === b.split('@')[0]
+  }
+
+  return false
+}
+
 async function buscarVideo(texto) {
   const resultado = await yts(texto)
 
@@ -280,74 +340,20 @@ async function procesarRespuesta(sock, msg) {
 
   if (!registro) return
 
-  const tipo = texto === 'a' ? 'audio' : 'video'
-  const clave = claveDescarga(registro.chatId || chatId, registro.videoId, tipo)
+  const jidUsuario = obtenerJidUsuario(msg, sock)
 
-  const jidUsuario =
-    msg.key?.participant ||
-    msg.key?.remoteJid ||
-    msg.participant
-
-  const numero = String(jidUsuario || '')
-    .split('@')[0]
-    .split(':')[0]
-
-  if (
-    baseDatos.completadas[clave] ||
-    registro[tipo] === 'completada'
-  ) {
-    const completada = baseDatos.completadas[clave]
-
-    const mediaKey =
-      completada?.messageKey ||
-      registro[`${tipo}MessageKey`]
-
-    const mediaMessage =
-      completada?.quotedMessage ||
-      registro[`${tipo}QuotedMessage`]
-
-    const mensajeCitado =
-      mediaKey && mediaMessage
-        ? {
-            key: mediaKey,
-            message: mediaMessage
-          }
-        : msg
-
-    await sock.sendMessage(
-      chatId,
-      {
-        text: `《✧》 La descarga de ${tipo} de este video ya fue procesada. Aquí está la descarga @${numero}`,
-        mentions: jidUsuario ? [jidUsuario] : []
-      },
-      { quoted: mensajeCitado }
-    )
-
-    if (!completada) {
-      baseDatos.completadas[clave] = {
-        tipo,
-        titulo: registro.titulo,
-        url: registro.url,
-        messageKey: registro[`${tipo}MessageKey`] || null,
-        quotedMessage: registro[`${tipo}QuotedMessage`] || null,
-        fecha: Date.now()
-      }
-
-      guardarBaseDatos()
-    }
-
+  if (!mismoUsuario(jidUsuario, registro.solicitante)) {
     return
   }
 
-  if (descargasActivas.has(clave)) {
-    await sock.sendMessage(
-      chatId,
-      {
-        text: `《✧》 La descarga de ${tipo} ya está en proceso. Espera a que termine y vuelve a intentarlo si fuera necesario.`
-      },
-      { quoted: msg }
-    )
+  const tipo = texto === 'a' ? 'audio' : 'video'
+  const clave = claveDescarga(
+    registro.chatId || chatId,
+    registro.videoId,
+    tipo
+  )
 
+  if (descargasActivas.has(clave) || registro[tipo] === 'procesando') {
     return
   }
 
@@ -411,7 +417,10 @@ async function procesarRespuesta(sock, msg) {
     registro[`${tipo}MessageKey`] = enviado?.key || null
     registro[`${tipo}QuotedMessage`] = enviado?.message || null
 
+    const completada = baseDatos.completadas[clave] || {}
+
     baseDatos.completadas[clave] = {
+      ...completada,
       tipo,
       titulo: registro.titulo,
       url: registro.url,
@@ -562,7 +571,7 @@ export default {
         url: ytUrl,
         titulo: title,
         duracion: video.seconds || 0,
-        solicitante: msg.key?.participant || msg.key?.remoteJid,
+        solicitante: obtenerJidUsuario(msg, sock),
         creado: Date.now(),
         audio: 'pendiente',
         video: 'pendiente'
