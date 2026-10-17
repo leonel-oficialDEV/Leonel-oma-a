@@ -60,7 +60,7 @@ export default {
       const botSettings = await db.getSettings(botId)
       const { namebot = '', namebot2 = '', banner = '', owner = '' } = botSettings
 
-      const link = 'https://api.evogb.org'
+      const link = 'https://chat.whatsapp.com/DVXaI5Xf2wf7OUHgM3s5eq'
       const isOficialBot = botId === (global?.sock?.user?.id?.split(':')[0] + '@s.whatsapp.net')
       const botType = isOficialBot ? 'Owner' : 'Sub Bot'
       const platform = `${os.type()} ${os.release()} ${os.arch()}`
