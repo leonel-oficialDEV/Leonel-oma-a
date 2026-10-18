@@ -9,7 +9,6 @@ export default {
   category: 'nsfw',
   run: async ({ msg, sock, command }) => {
     try {
-      // Verificación de grupo y configuración NSFW compatible con tu sistema #db o global.db
       const isGroup = msg.isGroup ?? msg.chat?.endsWith('@g.us')
       if (isGroup) {
         const chatData = (typeof db?.getChat === 'function' ? await db.getChat(msg.chat) : global.db?.data?.chats?.[msg.chat]) || {}
@@ -18,43 +17,50 @@ export default {
         }
       }
 
+      // Función auxiliar para enviar medios reintentando si algún enlace está caído
+      const sendRandomMedia = async (list, type, caption) => {
+        const shuffled = [...list].sort(() => 0.5 - Math.random())
+        let sent = false
+
+        for (const url of shuffled.slice(0, 5)) { // Prueba hasta 5 enlaces distintos si fallan
+          try {
+            const res = await fetch(url, { method: 'HEAD' })
+            if (!res.ok) continue // Si el enlace da 404, salta al siguiente
+
+            const payload = type === 'video' 
+              ? { video: { url }, mimetype: 'video/mp4', caption }
+              : { image: { url }, caption }
+
+            await sock.sendMessage(msg.chat, payload, { quoted: msg })
+            sent = true
+            break
+          } catch {
+            continue
+          }
+        }
+
+        if (!sent) {
+          return msg.reply('《✤》 *No se pudo enviar el archivo.* Todos los enlaces probados están caídos (Telegraph eliminó estos videos). Debes cambiar las URLs por enlaces nuevos (ej. de Catbox o Qu.ax).')
+        }
+      }
+
       switch (command) {
-        case 'pack': {
-          const url = pack[Math.floor(Math.random() * pack.length)]
-          await sock.sendMessage(msg.chat, {
-            image: { url },
-            caption: `*🥵 Pack 🥵*`
-          }, { quoted: msg })
+        case 'pack':
+          await sendRandomMedia(pack, 'image', '*🥵 Pack 🥵*')
           break
-        }
 
-        case 'pack2': {
-          const url2 = packgirl[Math.floor(Math.random() * packgirl.length)]
-          await sock.sendMessage(msg.chat, {
-            image: { url: url2 },
-            caption: `*🥵 Pack 2 🥵*`
-          }, { quoted: msg })
+        case 'pack2':
+          await sendRandomMedia(packgirl, 'image', '*🥵 Pack 2 🥵*')
           break
-        }
 
-        case 'pack3': {
-          const url3 = packmen[Math.floor(Math.random() * packmen.length)]
-          await sock.sendMessage(msg.chat, {
-            image: { url: url3 },
-            caption: `*🥵 Pack 3 🥵*`
-          }, { quoted: msg })
+        case 'pack3':
+          await sendRandomMedia(packmen, 'image', '*🥵 Pack 3 🥵*')
           break
-        }
 
         case 'videoxxx':
-        case 'vídeoxxx': {
-          const url4 = videosxxxc[Math.floor(Math.random() * videosxxxc.length)]
-          await sock.sendMessage(msg.chat, {
-            video: { url: url4 },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`
-          }, { quoted: msg })
+        case 'vídeoxxx':
+          await sendRandomMedia(videosxxxc, 'video', '*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*')
           break
-        }
 
         case 'videoxxxlesbi':
         case 'videolesbixxx':
@@ -62,18 +68,13 @@ export default {
         case 'pornolesbianavid':
         case 'pornolesbiv':
         case 'pornolesbianav':
-        case 'pornolesv': {
-          const url5 = videosxxxc2[Math.floor(Math.random() * videosxxxc2.length)]
-          await sock.sendMessage(msg.chat, {
-            video: { url: url5 },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`
-          }, { quoted: msg })
+        case 'pornolesv':
+          await sendRandomMedia(videosxxxc2, 'video', '*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*')
           break
-        }
       }
     } catch (err) {
       console.error(err)
-      return msg.reply(typeof msgglobal !== 'undefined' ? msgglobal : '❌ Ocurrió un error al enviar el archivo (es probable que el enlace esté caído).')
+      return msg.reply(typeof msgglobal !== 'undefined' ? msgglobal : '❌ Ocurrió un error inesperado al ejecutar el comando.')
     }
   }
 }
