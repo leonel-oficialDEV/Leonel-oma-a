@@ -23,8 +23,7 @@ export default {
           const url = pack[Math.floor(Math.random() * pack.length)]
           await sock.sendMessage(msg.chat, {
             image: { url },
-            caption: `*🥵 Pack 🥵*`,
-            viewOnce: true
+            caption: `*🥵 Pack 🥵*`
           }, { quoted: msg })
           break
         }
@@ -33,8 +32,7 @@ export default {
           const url2 = packgirl[Math.floor(Math.random() * packgirl.length)]
           await sock.sendMessage(msg.chat, {
             image: { url: url2 },
-            caption: `*🥵 Pack 2 🥵*`,
-            viewOnce: true
+            caption: `*🥵 Pack 2 🥵*`
           }, { quoted: msg })
           break
         }
@@ -43,8 +41,7 @@ export default {
           const url3 = packmen[Math.floor(Math.random() * packmen.length)]
           await sock.sendMessage(msg.chat, {
             image: { url: url3 },
-            caption: `*🥵 Pack 3 🥵*`,
-            viewOnce: true
+            caption: `*🥵 Pack 3 🥵*`
           }, { quoted: msg })
           break
         }
@@ -54,8 +51,7 @@ export default {
           const url4 = videosxxxc[Math.floor(Math.random() * videosxxxc.length)]
           await sock.sendMessage(msg.chat, {
             video: { url: url4 },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`,
-            viewOnce: true
+            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`
           }, { quoted: msg })
           break
         }
@@ -70,8 +66,7 @@ export default {
           const url5 = videosxxxc2[Math.floor(Math.random() * videosxxxc2.length)]
           await sock.sendMessage(msg.chat, {
             video: { url: url5 },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`,
-            viewOnce: true
+            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`
           }, { quoted: msg })
           break
         }
