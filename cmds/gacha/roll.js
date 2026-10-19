@@ -30,7 +30,7 @@ async function getGachaSystem() {
   try {
     const fileUrl = pathToFileURL(filePath).href;
     const module = await import(`${fileUrl}?update=${Date.now()}`);
-    
+
     const list = module.characters || module.data || module.default || (Array.isArray(module) ? module : []);
     const getRandom = typeof module.getRandomCharacter === 'function' ? module.getRandomCharacter : null;
 
@@ -136,7 +136,7 @@ async function buscarImagenPersonaje(nombre, serie) {
   for (const query of queries) {
     const endpoints = [
       `https://api.evogb.org/search/pinterest?query=${encodeURIComponent(query)}&apikey=Mai301520-art`,
-      `https://delirius-apiofc.vercel.app/search/pinterestv2?text=${encodeURIComponent(query)}`,
+      `https://api.delirius.online/search/pinterestv2?text=${encodeURIComponent(query)}`,
       `https://bk9.fun/search/gimage?q=${encodeURIComponent(query)}`
     ];
 
@@ -295,7 +295,7 @@ export default {
       const caption = `❀ Nombre » *${chatChar.name}*\n⚥ Género » *${gender}*\n🎂 Edad » *${age}*\n📏 Altura » *${height}*\n✰ Rareza » *${rarity.color} ${rarity.name}*\n💰 Valor » *$${finalValue.toLocaleString()}*\n♡ Estado » ${statusText}\n❖ Serie/Anime » *${series}*\u206c`;
 
       const sent = await sock.sendMessage(chatId, { image: imageToSend, caption: caption }, { quoted: msg });
-      
+
       if (!chat.rolls) chat.rolls = {};
       chat.rolls[sent.key.id] = { 
         id: charId, 
@@ -305,7 +305,7 @@ export default {
         reservedBy: userId, 
         reservedUntil: chatChar.reservedUntil 
       };
-      
+
       db.data.chats[chatId].rolls = chat.rolls;
       if (typeof db.updateChat === 'function') {
         db.updateChat(chatId, 'rolls', chat.rolls);
@@ -333,4 +333,3 @@ export default {
     }
   }
 };
-        
