@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 global.owner = ['393715279301', //Mai
 '393715279301', //mai
 '50492280729', //netherlord
-'593989068253', //Bryan
+'5804245610338', //Bryan
 '593981607650', //Bryan2
 '584148014097', //Bryan3
 '51962502233', //Jesu
