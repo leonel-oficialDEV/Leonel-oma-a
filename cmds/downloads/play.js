@@ -145,7 +145,7 @@ export default {
 > ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
 > ❀ Vistas › *${views}*
 > ✩ Publicado › *${video_info.ago || 'Desconocido'}*
-> ❒ Enlace › *${url}*${isInteractivePlay ? `\n\n> 🤍 *Responde a este mensaje con:🤍*\n> *.a* › Descargar Audio\n> *.v* › Descargar Video\n> • *av* › Descargar Audio y Video` : ''}`
+> ❒ Enlace › *${url}*${isInteractivePlay ? `\n\n> 🤍*Responde a este mensaje con:🤍*\n> *.a* › Descargar Audio\n> *.v* › Descargar Video\n> • *av* › Descargar Audio y Video` : ''}`
 
           let sentMsg
           if (thumbnail) {
