@@ -101,7 +101,7 @@ export default async (sock, msg) => {
               'canonical-url': botSettings.link,
               'matched-text': botSettings.link,
               title: "˚₊·—̳͟͞͞♡ 𝐖 𝐄 𝐋 𝐂 𝐎 𝐌 𝐄 ₍ᐢ..ᐢ₎♡",
-              description: `${botSettings.namebot2 || 'Thoka Bot'}, Built With 💜 By 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™`,
+              description: `${botSettings.namebot2 || 'Thoka Bot'},`,
               jpegThumbnail: imageMessage?.jpegThumbnail ? Buffer.from(imageMessage.jpegThumbnail) : undefined,
               highQualityThumbnail: imageMessage || undefined
             }))
@@ -150,7 +150,7 @@ export default async (sock, msg) => {
               'canonical-url': botSettings.link,
               'matched-text': botSettings.link,
               title: "˚₊·—̳͟͞͞♡ 𝐁 𝐘 𝐄 ₍ᐢ..ᐢ₎♡",
-              description: `${botSettings.namebot2 || 'Thoka Bot'}, Built With 💜 By 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™ `,
+              description: `${botSettings.namebot2 || 'Thoka Bot'}, Built With`,
               jpegThumbnail: imageMessage?.jpegThumbnail ? Buffer.from(imageMessage.jpegThumbnail) : undefined,
               highQualityThumbnail: imageMessage || undefined
             }))
