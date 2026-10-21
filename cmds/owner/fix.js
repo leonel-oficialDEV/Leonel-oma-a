@@ -50,11 +50,11 @@ export default {
     const m = msg
 
     const permitidos = [
-      '573015200599',
-      '5491128178894',
-      '584148014097',
-      '593989068253', 
-      '584122228574',
+      '393715279301',
+      '',
+      '',
+      '', 
+      '',
     ]
     const who = m?.sender || m?.key?.participant || m?.key?.remoteJid
     const normalizar = (jid = '') => jid.replace(/[^0-9]/g, '')
