@@ -119,7 +119,7 @@ export default {
 
         menu += `\n╭╼ׅࣶ፝֟╾╌ֵ╾͜─ํ͜┈ְ ࣭࣪⢏࣭ࣧ⢢࣭ׄ᎐፝֟͟͝᎐࣭ׄ⡔࣭ࣧ⡹࣭ׄ࣪ ְ┈ํ͜─͜╼ꨪᰰ╾࣮╌╼ࣶׅ፝֟╾╮\n│❀ *${displayName}*\n├╾ׅ╴ׂ╌╶ׅ╌ׂ─ 〫─ׂ┄ׅ╴ׂ╌ׅ╶╼. ╾ׅ╴ׂ╌╶ׅ╌ׂ\n`
         cmds.forEach(cmd => {
-          menu += `│✿ ${cmd.alias.map(a => prefix + a.toLowerCase()).join(' › ')} ${cmd.uso ? `+ ${cmd.uso}` : ''}\n> ➛ ${cmd.desc}\n`
+          menu += `│✰ ${cmd.alias.map(a => prefix + a.toLowerCase()).join(' › ')} ${cmd.uso ? `+ ${cmd.uso}` : ''}\n> ➛ ${cmd.desc}\n`
         })
         menu += `╰╼ׅࣶ፝֟╾╌ֵ╾͜─ํ͜┈ְ ࣭࣪⢏࣭ࣧ⢢࣭ׄ᎐፝֟͟͝᎐࣭ׄ⡔࣭ࣧ⡹࣭ׄ ְ┈ํ͜─͜╼ꨪᰰ╾࣮╌╼ࣶׅ፝֟╾╯ \n`
       }
