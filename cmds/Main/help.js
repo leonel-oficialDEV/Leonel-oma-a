@@ -75,9 +75,9 @@ export default {
       `: ̗̀☕︎ *ᴏᴡɴᴇʀ ::* ${dev}\n` +
       `: ̗̀ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
       `: ̗̀☄︎ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n\n` +
-      `: ̗̀❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
-      `: ̗̀❖ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (Colombia)\n` +
-      `: ̗̀❖ *ᴜʀʟ ::* ${link}\n\n` +
+      `𔖮๋ׅꉹ᮫ִׁ۫❀̷̸᮫ִּׁ᳟፝֟࠭͠𐋕᮫ִׁ᷂❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
+      `𔖮๋ׅꉹ᮫ִׁ۫❀̷̸᮫ִּׁ᳟፝֟࠭͠𐋕᮫ִׁ᷂ⴵ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (Colombia)\n` +
+      `𔖮๋ׅꉹ᮫ִׁ۫❀̷̸᮫ִּׁ᳟፝֟࠭͠𐋕᮫ִׁ᷂❖ *ᴜʀʟ ::* ${link}\n\n` +
       ` ⌒࣪᷼⏜͡ ۪ ࿚ꨪᰰ࿙ ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ ࿚ꨪᰰ࿙ ۪ ͡⏜ׄ᷼⌒\n\n` +
       `⋆｡ﾟ☁ ｡° *ᴄᴏᴍ꯭ᴀ꯭ɴᴅᴏs* ﾟ｡☁️˚₊ \n`
 
