@@ -2,21 +2,25 @@ import yts from 'yt-search'
 import { getBuffer } from '#serialize'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 
+const DOWNLOAD_DIR = '/home/container/tmp'
+const TMP_DIR = '/home/container/tmp'
 const YTDLP_PATH = '/home/container/yt-dlp'
 const COOKIES_PATH = '/home/container/cookies.txt'
-const TMP_DIR = '/home/container/tmp'
 const MAX_INTENTOS_DESCARGA = 3
+
 const REGISTROS = new Map()
 const DESCARGAS_ACTIVAS = new Set()
 const SOCKETS_REGISTRADOS = new WeakSet()
 
 let ytDlp
-let colaLimpieza = Promise.resolve()
 
 process.env.TMPDIR = TMP_DIR
 process.env.TMP = TMP_DIR
 process.env.TEMP = TMP_DIR
+
+fs.mkdirSync(DOWNLOAD_DIR, { recursive: true })
 
 function esperar(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -26,10 +30,7 @@ async function cargarYtDlp() {
   if (ytDlp) return ytDlp
 
   const modulo = await import('yt-dlp-wrap-plus')
-  const YTDlpWrap =
-    modulo.default?.default ||
-    modulo.default ||
-    modulo.YTDlpWrap
+  const YTDlpWrap = modulo.default?.default || modulo.default || modulo.YTDlpWrap
 
   if (!YTDlpWrap) {
     throw new Error('No se pudo cargar yt-dlp-wrap-plus.')
@@ -50,53 +51,29 @@ async function cargarYtDlp() {
   return ytDlp
 }
 
-function limpiarTmp() {
-  fs.mkdirSync(TMP_DIR, { recursive: true })
-
-  let eliminados = 0
-  let errores = 0
-
-  for (const nombre of fs.readdirSync(TMP_DIR)) {
-    const archivo = path.join(TMP_DIR, nombre)
-
-    try {
-      const stat = fs.lstatSync(archivo)
-
-      if (stat.isSymbolicLink()) {
-        fs.unlinkSync(archivo)
-      } else {
-        fs.rmSync(archivo, {
-          recursive: true,
-          force: true,
-          maxRetries: 3,
-          retryDelay: 200
-        })
-      }
-
-      eliminados++
-    } catch {
-      errores++
-    }
-  }
-
-  return { eliminados, errores }
-}
-
-async function limpiarTmpSeguro() {
-  const anterior = colaLimpieza
-
-  let liberar
-  colaLimpieza = new Promise(resolve => {
-    liberar = resolve
-  })
-
-  await anterior
-
+function eliminarArchivosDescarga(id) {
   try {
-    return limpiarTmp()
-  } finally {
-    liberar()
-  }
+    for (const nombre of fs.readdirSync(DOWNLOAD_DIR)) {
+      if (!nombre.startsWith(`${id}.`)) continue
+
+      const archivo = path.join(DOWNLOAD_DIR, nombre)
+
+      try {
+        const stat = fs.lstatSync(archivo)
+
+        if (stat.isSymbolicLink() || stat.isFile()) {
+          fs.unlinkSync(archivo)
+        } else if (stat.isDirectory()) {
+          fs.rmSync(archivo, {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 200
+          })
+        }
+      } catch {}
+    }
+  } catch {}
 }
 
 function desenvolverMensaje(msg) {
@@ -226,24 +203,71 @@ async function buscarVideo(texto) {
   return resultado.videos[0]
 }
 
-async function obtenerUrlDirecta(url, tipo) {
+function buscarArchivoDescargado(id, tipo) {
+  const extensionesPermitidas = tipo === 'audio'
+    ? ['.m4a', '.mp3', '.opus', '.webm', '.aac', '.wav']
+    : ['.mp4', '.mkv', '.webm', '.mov']
+
+  const archivos = fs.readdirSync(DOWNLOAD_DIR)
+
+  const candidatos = archivos
+    .filter(nombre => {
+      if (!nombre.startsWith(`${id}.`)) return false
+
+      const extension = path.extname(nombre).toLowerCase()
+
+      if (!extensionesPermitidas.includes(extension)) return false
+      if (/\.(part|ytdl|temp)$/i.test(nombre)) return false
+
+      return true
+    })
+    .map(nombre => {
+      const archivo = path.join(DOWNLOAD_DIR, nombre)
+
+      try {
+        const stat = fs.statSync(archivo)
+
+        return stat.isFile() && stat.size > 0
+          ? { archivo, nombre, tamano: stat.size }
+          : null
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.tamano - a.tamano)
+
+  return candidatos[0] || null
+}
+
+async function descargarArchivo(url, tipo) {
   const downloader = await cargarYtDlp()
   let ultimoError
 
   for (let intento = 1; intento <= MAX_INTENTOS_DESCARGA; intento++) {
+    const id = `yt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`
+
     try {
-      await limpiarTmpSeguro()
+      fs.mkdirSync(DOWNLOAD_DIR, { recursive: true })
+      eliminarArchivosDescarga(id)
+
+      const plantilla = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`)
 
       const argumentos = [
         '--ignore-config',
         '--no-playlist',
         '--no-warnings',
         '--no-cache-dir',
+        '--no-part',
+        '--no-mtime',
         '--retries', '5',
         '--fragment-retries', '5',
         '--extractor-retries', '3',
+        '--file-access-retries', '3',
+        '--socket-timeout', '30',
         '--js-runtimes', 'node',
-        '--remote-components', 'ejs:github'
+        '--remote-components', 'ejs:github',
+        '--output', plantilla
       ]
 
       if (fs.existsSync(COOKIES_PATH)) {
@@ -252,50 +276,46 @@ async function obtenerUrlDirecta(url, tipo) {
 
       if (tipo === 'audio') {
         argumentos.push(
-          '-f',
-          'bestaudio[ext=m4a]/bestaudio',
-          '--get-url'
+          '-f', 'bestaudio[ext=m4a]/bestaudio',
+          '--extract-audio',
+          '--audio-format', 'm4a',
+          '--audio-quality', '0'
         )
       } else {
         argumentos.push(
-          '-f',
-          'best[ext=mp4][height<=720]/best[height<=720]/best',
-          '--get-url'
+          '-f', 'best[ext=mp4][height<=720]/best[height<=720]/best',
+          '--merge-output-format', 'mp4'
         )
       }
 
       argumentos.push(url)
 
-      const resultado = await downloader.execPromise(argumentos)
-      const urls = String(resultado || '')
-        .split(/\r?\n/)
-        .map(linea => linea.trim())
-        .filter(linea => /^https?:\/\//i.test(linea))
+      await downloader.execPromise(argumentos)
 
-      if (!urls.length) {
-        throw new Error('yt-dlp no devolvió una URL directa.')
-      }
+      const resultado = buscarArchivoDescargado(id, tipo)
 
-      if (tipo === 'video' && urls.length > 1) {
+      if (!resultado) {
         throw new Error(
-          'El video requiere combinar varias pistas. No se puede garantizar el envío directo sin procesar archivos.'
+          `yt-dlp terminó, pero no se encontró el archivo descargado en ${DOWNLOAD_DIR}.`
         )
       }
 
-      return urls[0]
+      return {
+        ...resultado,
+        id
+      }
     } catch (error) {
       ultimoError = error
+      eliminarArchivosDescarga(id)
 
       if (intento < MAX_INTENTOS_DESCARGA) {
         await esperar(intento * 1500)
       }
-    } finally {
-      await limpiarTmpSeguro().catch(() => {})
     }
   }
 
   throw new Error(
-    `No se pudo obtener la URL después de ${MAX_INTENTOS_DESCARGA} intentos: ${String(ultimoError?.message || ultimoError).slice(0, 600)}`
+    `No se pudo descargar después de ${MAX_INTENTOS_DESCARGA} intentos: ${String(ultimoError?.message || ultimoError).slice(0, 600)}`
   )
 }
 
@@ -311,6 +331,7 @@ async function procesarRespuesta(sock, msg) {
   if (!chatId || !sentId) return
 
   const registro = REGISTROS.get(`${chatId}:${sentId}`)
+
   if (!registro) return
 
   if (!mismoUsuario(obtenerJidUsuario(msg, sock), registro.solicitante)) {
@@ -324,51 +345,55 @@ async function procesarRespuesta(sock, msg) {
 
   DESCARGAS_ACTIVAS.add(clave)
 
+  let descarga
+
   try {
     await sock.sendMessage(chatId, {
       react: { text: '🕒', key: msg.key }
     })
 
-    const urlDirecta = await obtenerUrlDirecta(registro.url, tipo)
+    descarga = await descargarArchivo(registro.url, tipo)
+
+    if (!fs.existsSync(descarga.archivo)) {
+      throw new Error('El archivo descargado ya no existe.')
+    }
+
     const nombre = limpiarTexto(registro.titulo) || tipo
+    const extension = path.extname(descarga.nombre) || (tipo === 'audio' ? '.m4a' : '.mp4')
     const comoDocumento = Number(registro.duracion) > 1200
 
     if (tipo === 'audio') {
-      await sock.sendMessage(
-        chatId,
-        comoDocumento
-          ? {
-              document: { url: urlDirecta },
-              mimetype: 'audio/mp4',
-              fileName: `${nombre}.m4a`,
-              caption: `➩ ${registro.titulo}`
-            }
-          : {
-              audio: { url: urlDirecta },
-              mimetype: 'audio/mp4',
-              fileName: `${nombre}.m4a`,
-              ptt: false
-            },
-        { quoted: msg }
-      )
+      if (comoDocumento) {
+        await sock.sendMessage(chatId, {
+          document: { url: descarga.archivo },
+          mimetype: 'audio/mp4',
+          fileName: `${nombre}${extension}`,
+          caption: `➩ ${registro.titulo}`
+        }, { quoted: msg })
+      } else {
+        await sock.sendMessage(chatId, {
+          audio: { url: descarga.archivo },
+          mimetype: 'audio/mp4',
+          fileName: `${nombre}${extension}`,
+          ptt: false
+        }, { quoted: msg })
+      }
     } else {
-      await sock.sendMessage(
-        chatId,
-        comoDocumento
-          ? {
-              document: { url: urlDirecta },
-              mimetype: 'video/mp4',
-              fileName: `${nombre}.mp4`,
-              caption: `➩ ${registro.titulo}`
-            }
-          : {
-              video: { url: urlDirecta },
-              mimetype: 'video/mp4',
-              fileName: `${nombre}.mp4`,
-              caption: `➩ ${registro.titulo}`
-            },
-        { quoted: msg }
-      )
+      if (comoDocumento) {
+        await sock.sendMessage(chatId, {
+          document: { url: descarga.archivo },
+          mimetype: 'video/mp4',
+          fileName: `${nombre}${extension}`,
+          caption: `➩ ${registro.titulo}`
+        }, { quoted: msg })
+      } else {
+        await sock.sendMessage(chatId, {
+          video: { url: descarga.archivo },
+          mimetype: 'video/mp4',
+          fileName: `${nombre}${extension}`,
+          caption: `➩ ${registro.titulo}`
+        }, { quoted: msg })
+      }
     }
 
     await sock.sendMessage(chatId, {
@@ -379,14 +404,14 @@ async function procesarRespuesta(sock, msg) {
       react: { text: '❌', key: msg.key }
     }).catch(() => {})
 
-    await sock.sendMessage(
-      chatId,
-      {
-        text: `《✧》 No se pudo obtener o enviar el ${tipo}.\n\n> Error: ${String(error?.message || error).slice(0, 700)}`
-      },
-      { quoted: msg }
-    ).catch(() => {})
+    await sock.sendMessage(chatId, {
+      text: `《✧》 No se pudo descargar o enviar el ${tipo}.\n\n> Error: ${String(error?.message || error).slice(0, 700)}`
+    }, { quoted: msg }).catch(() => {})
   } finally {
+    if (descarga?.id) {
+      eliminarArchivosDescarga(descarga.id)
+    }
+
     DESCARGAS_ACTIVAS.delete(clave)
   }
 }
@@ -427,13 +452,9 @@ export default {
       registrarEscucha(sock)
 
       if (!consulta) {
-        return sock.sendMessage(
-          chatId,
-          {
-            text: '《✧》 Escribe el nombre o la URL del video de YouTube.'
-          },
-          opciones
-        )
+        return sock.sendMessage(chatId, {
+          text: '《✧》 Escribe el nombre o la URL del video de YouTube.'
+        }, opciones)
       }
 
       await sock.sendMessage(chatId, {
@@ -459,27 +480,19 @@ export default {
 
       if (miniatura) {
         try {
-          enviado = await sock.sendMessage(
-            chatId,
-            {
-              image: await getBuffer(miniatura),
-              caption: informacion
-            },
-            opciones
-          )
+          enviado = await sock.sendMessage(chatId, {
+            image: await getBuffer(miniatura),
+            caption: informacion
+          }, opciones)
         } catch {
-          enviado = await sock.sendMessage(
-            chatId,
-            { text: informacion },
-            opciones
-          )
+          enviado = await sock.sendMessage(chatId, {
+            text: informacion
+          }, opciones)
         }
       } else {
-        enviado = await sock.sendMessage(
-          chatId,
-          { text: informacion },
-          opciones
-        )
+        enviado = await sock.sendMessage(chatId, {
+          text: informacion
+        }, opciones)
       }
 
       if (!enviado?.key?.id) {
@@ -510,13 +523,9 @@ export default {
         react: { text: '❌', key: msg.key }
       }).catch(() => {})
 
-      await sock.sendMessage(
-        chatId,
-        {
-          text: `《✧》 Error: ${String(error?.message || error).slice(0, 800)}`
-        },
-        opciones
-      ).catch(() => {})
+      await sock.sendMessage(chatId, {
+        text: `《✧》 Error: ${String(error?.message || error).slice(0, 800)}`
+      }, opciones).catch(() => {})
     }
   }
 }
