@@ -71,12 +71,12 @@ export default {
 
        let menu = `> *¡ʜᴏʟᴀ!* ${msg.pushName}, como está tu día?, mucho gusto mi nombre es *${namebot2}* ʚ♡⃛ɞ(ू•ᴗ•ू❁)*\n\n` +
       `   ⌒࣪᷼⏜͡  ۪  ࿚ꨪᰰ࿙  ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ  ࿚ꨪᰰ࿙  ۪  ͡⏜ׄ᷼⌒\n\n` +
-      `: ̗̀〄 *ᴅᴇᴠᴇʟᴏᴘᴇʀ ::* ${dev}\n` +
-      `: ̗̀ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
-      `: ̗̀☄︎ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n` +
-      `: ̗̀❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
-      `: ̗̀❖ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (venezuela)\n` +
-      `: ̗̀❖ *ᴜʀʟ ::* ${link}\n\n` +
+      `├ׁ̟̇ ❀ *ᴅᴇᴠᴇʟᴏᴘᴇʀ ::* ${dev}\n` +
+      `├ׁ̟̇ ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
+      `├ׁ̟̇ ☄︎ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n` +
+      `├ׁ̟̇ ❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
+      `├ׁ̟̇ ❖ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (venezuela)\n` +
+      `├ׁ̟̇ ❖ *ᴜʀʟ ::* ${link}\n\n` +
       `   ⌒࣪᷼⏜͡  ۪  ࿚ꨪᰰ࿙  ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ  ࿚ꨪᰰ࿙  ۪  ͡⏜ׄ᷼⌒\n\n` +
       `⋆｡ﾟ☁︎ ｡° *ᴄᴏᴍ꯭ᴀ꯭ɴᴅᴏs* ﾟ｡˚₊ 𓂃\n`
 
