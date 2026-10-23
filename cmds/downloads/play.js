@@ -2,753 +2,521 @@ import yts from 'yt-search'
 import { getBuffer } from '#serialize'
 import fs from 'fs'
 import path from 'path'
-import crypto from 'crypto'
 
-const DOWNLOAD_DIR = path.join('/tmp', 'descargas-yt')
-const YTDLP_PATH = path.resolve('./yt-dlp')
+const YTDLP_PATH = '/home/container/yt-dlp'
 const COOKIES_PATH = '/home/container/cookies.txt'
-const YTDLP_TEMP_DIR = path.join(DOWNLOAD_DIR, 'tmp')
+const TMP_DIR = '/home/container/tmp'
 const MAX_INTENTOS_DESCARGA = 3
-const MAX_REGISTROS = 500
-const TTL_REGISTROS = 6 * 60 * 60 * 1000
-
-fs.mkdirSync(DOWNLOAD_DIR, { recursive: true, mode: 0o700 })
-fs.mkdirSync(YTDLP_TEMP_DIR, { recursive: true, mode: 0o700 })
-
-process.env.TMPDIR = YTDLP_TEMP_DIR
-process.env.TMP = YTDLP_TEMP_DIR
-process.env.TEMP = YTDLP_TEMP_DIR
-
-try {
-fs.chmodSync(DOWNLOAD_DIR, 0o700)
-fs.chmodSync(YTDLP_TEMP_DIR, 0o700)
-} catch {}
+const REGISTROS = new Map()
+const DESCARGAS_ACTIVAS = new Set()
+const SOCKETS_REGISTRADOS = new WeakSet()
 
 let ytDlp
-let cargaYtDlp
-const socketsRegistrados = new WeakSet()
-const descargasActivas = new Set()
-const mensajesPendientes = new Map()
+let colaLimpieza = Promise.resolve()
 
-function limpiarRegistrosAntiguos() {
-const ahora = Date.now()
+process.env.TMPDIR = TMP_DIR
+process.env.TMP = TMP_DIR
+process.env.TEMP = TMP_DIR
 
-for (const [clave, registro] of mensajesPendientes) {
-if (ahora - registro.creado > TTL_REGISTROS) {
-mensajesPendientes.delete(clave)
-}
-}
-
-while (mensajesPendientes.size > MAX_REGISTROS) {
-const primeraClave = mensajesPendientes.keys().next().value
-if (!primeraClave) break
-mensajesPendientes.delete(primeraClave)
-}
-}
-
-function guardarRegistro(clave, registro) {
-mensajesPendientes.delete(clave)
-mensajesPendientes.set(clave, registro)
-limpiarRegistrosAntiguos()
-}
-
-function desenvolverMensaje(msg) {
-let mensaje = msg?.message
-
-for (let i = 0; i < 8 && mensaje; i++) {
-const envoltura =
-mensaje.ephemeralMessage ||
-mensaje.viewOnceMessage ||
-mensaje.viewOnceMessageV2 ||
-mensaje.viewOnceMessageV2Extension ||
-mensaje.documentWithCaptionMessage ||
-mensaje.deviceSentMessage
-
-if (!envoltura?.message) break
-mensaje = envoltura.message
-
-}
-
-return mensaje || {}
+function esperar(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function cargarYtDlp() {
-if (ytDlp) return ytDlp
-if (cargaYtDlp) return cargaYtDlp
+  if (ytDlp) return ytDlp
 
-cargaYtDlp = (async () => {
-const modulo = await import('yt-dlp-wrap-plus')
-const YTDlpWrap =
-modulo.default?.default ||
-modulo.default ||
-modulo.YTDlpWrap
+  const modulo = await import('yt-dlp-wrap-plus')
+  const YTDlpWrap =
+    modulo.default?.default ||
+    modulo.default ||
+    modulo.YTDlpWrap
 
-if (!YTDlpWrap) {
-  throw new Error('No se pudo cargar yt-dlp-wrap-plus.')
-}
+  if (!YTDlpWrap) {
+    throw new Error('No se pudo cargar yt-dlp-wrap-plus.')
+  }
 
-if (process.platform !== 'linux') {
-  throw new Error(
-    `La descarga automática está configurada para Linux. Sistema detectado: ${process.platform}`
-  )
-}
+  if (!fs.existsSync(YTDLP_PATH)) {
+    throw new Error(`No se encontró el ejecutable: ${YTDLP_PATH}`)
+  }
 
-let descargarEjecutable = !fs.existsSync(YTDLP_PATH)
-
-if (!descargarEjecutable) {
   try {
     fs.chmodSync(YTDLP_PATH, 0o755)
+  } catch {}
 
-    const comprobacion = new YTDlpWrap(YTDLP_PATH)
-    await comprobacion.execPromise(['--version'])
+  const instancia = new YTDlpWrap(YTDLP_PATH)
+  await instancia.execPromise(['--version'])
 
-    ytDlp = comprobacion
-    return ytDlp
-  } catch {
-    descargarEjecutable = true
-
-    try {
-      fs.unlinkSync(YTDLP_PATH)
-    } catch {}
-  }
+  ytDlp = instancia
+  return ytDlp
 }
 
-if (descargarEjecutable) {
-  let nombreEjecutable
+function limpiarTmp() {
+  fs.mkdirSync(TMP_DIR, { recursive: true })
 
-  if (process.arch === 'x64') {
-    nombreEjecutable = 'yt-dlp_linux'
-  } else if (process.arch === 'arm64') {
-    nombreEjecutable = 'yt-dlp_linux_aarch64'
-  } else {
-    throw new Error(
-      `Arquitectura no compatible con la descarga automática: ${process.arch}`
-    )
+  let eliminados = 0
+  let errores = 0
+
+  for (const nombre of fs.readdirSync(TMP_DIR)) {
+    const archivo = path.join(TMP_DIR, nombre)
+
+    try {
+      const stat = fs.lstatSync(archivo)
+
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(archivo)
+      } else {
+        fs.rmSync(archivo, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 200
+        })
+      }
+
+      eliminados++
+    } catch {
+      errores++
+    }
   }
 
-  const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${nombreEjecutable}`
-  const temporal = `${YTDLP_PATH}.download`
+  return { eliminados, errores }
+}
+
+async function limpiarTmpSeguro() {
+  const anterior = colaLimpieza
+
+  let liberar
+  colaLimpieza = new Promise(resolve => {
+    liberar = resolve
+  })
+
+  await anterior
 
   try {
-    const respuesta = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(120000)
-    })
-
-    if (!respuesta.ok) {
-      throw new Error(`GitHub respondió HTTP ${respuesta.status}.`)
-    }
-
-    const buffer = Buffer.from(await respuesta.arrayBuffer())
-
-    if (buffer.length < 100000) {
-      throw new Error(
-        `El ejecutable descargado es demasiado pequeño: ${buffer.length} bytes.`
-      )
-    }
-
-    fs.writeFileSync(temporal, buffer, { mode: 0o755 })
-    fs.chmodSync(temporal, 0o755)
-    fs.renameSync(temporal, YTDLP_PATH)
-    fs.chmodSync(YTDLP_PATH, 0o755)
-  } catch (error) {
-    try {
-      fs.unlinkSync(temporal)
-    } catch {}
-
-    throw new Error(
-      `No se pudo instalar yt-dlp: ${String(error?.message || error).slice(0, 500)}`
-    )
+    return limpiarTmp()
+  } finally {
+    liberar()
   }
 }
 
-const comprobacion = new YTDlpWrap(YTDLP_PATH)
+function desenvolverMensaje(msg) {
+  let mensaje = msg?.message
 
-try {
-  const version = await comprobacion.execPromise(['--version'])
+  for (let i = 0; i < 8 && mensaje; i++) {
+    const envoltura =
+      mensaje.ephemeralMessage ||
+      mensaje.viewOnceMessage ||
+      mensaje.viewOnceMessageV2 ||
+      mensaje.viewOnceMessageV2Extension ||
+      mensaje.documentWithCaptionMessage ||
+      mensaje.deviceSentMessage
 
-  if (!version) {
-    throw new Error('yt-dlp no devolvió su versión.')
+    if (!envoltura?.message) break
+    mensaje = envoltura.message
   }
-} catch (error) {
-  throw new Error(
-    `El ejecutable no pudo iniciarse. Detalle: ${String(error?.message || error).slice(0, 500)}`
-  )
-}
 
-ytDlp = comprobacion
-return ytDlp
-
-})()
-
-try {
-return await cargaYtDlp
-} finally {
-cargaYtDlp = null
-}
-}
-
-function limpiarTexto(texto = '') {
-return String(texto)
-.replace(/[\/:*?"<>|]/g, '')
-.replace(/\s+/g, ' ')
-.trim()
-.slice(0, 150)
-}
-
-function obtenerVideoId(url = '') {
-try {
-const parsed = new URL(url)
-
-if (parsed.hostname.includes('youtu.be')) {
-  return parsed.pathname.split('/').filter(Boolean)[0] || url
-}
-
-if (parsed.searchParams.get('v')) {
-  return parsed.searchParams.get('v')
-}
-
-const partes = parsed.pathname.split('/').filter(Boolean)
-
-if (['shorts', 'embed', 'live'].includes(partes[0])) {
-  return partes[1] || url
-}
-
-return url
-
-} catch {
-return url
-}
-}
-
-function claveDescarga(chatId, videoId, tipo) {
-return "${chatId}:${videoId}:${tipo}"
-}
-
-function claveMensaje(chatId, messageId) {
-return "${chatId}:${messageId}"
-}
-
-function formatearDuracion(segundos = 0) {
-segundos = Number(segundos) || 0
-
-const horas = Math.floor(segundos / 3600)
-const minutos = Math.floor((segundos % 3600) / 60)
-const segundosRestantes = Math.floor(segundos % 60)
-
-if (horas) {
-return "${horas}:${String(minutos).padStart(2, '0')}:${String(segundosRestantes).padStart(2, '0')}"
-}
-
-return "${minutos}:${String(segundosRestantes).padStart(2, '0')}"
+  return mensaje || {}
 }
 
 function obtenerTexto(msg) {
-const mensaje = desenvolverMensaje(msg)
+  const m = desenvolverMensaje(msg)
 
-return (
-mensaje.conversation ||
-mensaje.extendedTextMessage?.text ||
-mensaje.imageMessage?.caption ||
-mensaje.videoMessage?.caption ||
-mensaje.documentMessage?.caption ||
-mensaje.buttonsResponseMessage?.selectedButtonId ||
-mensaje.templateButtonReplyMessage?.selectedId ||
-mensaje.listResponseMessage?.singleSelectReply?.selectedRowId ||
-''
-).trim()
+  return (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    ''
+  ).trim()
 }
 
 function obtenerContexto(msg) {
-const mensaje = desenvolverMensaje(msg)
+  const m = desenvolverMensaje(msg)
 
-return (
-mensaje.extendedTextMessage?.contextInfo ||
-mensaje.imageMessage?.contextInfo ||
-mensaje.videoMessage?.contextInfo ||
-mensaje.documentMessage?.contextInfo ||
-mensaje.audioMessage?.contextInfo ||
-mensaje.buttonsResponseMessage?.contextInfo ||
-mensaje.templateButtonReplyMessage?.contextInfo ||
-mensaje.listResponseMessage?.contextInfo ||
-null
-)
+  return (
+    m.extendedTextMessage?.contextInfo ||
+    m.imageMessage?.contextInfo ||
+    m.videoMessage?.contextInfo ||
+    m.documentMessage?.contextInfo ||
+    null
+  )
 }
 
 function obtenerChatId(msg) {
-return msg?.key?.remoteJid || msg?.chat || null
+  return msg?.key?.remoteJid || msg?.chat || ''
 }
 
 function normalizarJid(jid) {
-if (!jid) return ''
-
-return String(jid)
-.split(':')[0]
-.trim()
-.toLowerCase()
+  return String(jid || '').split(':')[0].trim().toLowerCase()
 }
 
 function obtenerJidUsuario(msg, sock) {
-const chatId = obtenerChatId(msg)
+  const chatId = obtenerChatId(msg)
 
-if (msg?.key?.fromMe) {
-return normalizarJid(
-sock?.user?.id ||
-sock?.user?.jid ||
-msg?.key?.participant ||
-msg?.participant ||
-''
-)
+  if (msg?.key?.fromMe) {
+    return normalizarJid(
+      sock?.user?.id ||
+      sock?.user?.jid ||
+      msg?.key?.participant ||
+      ''
+    )
+  }
+
+  if (chatId.endsWith('@g.us')) {
+    return normalizarJid(
+      msg?.key?.participant ||
+      msg?.participant ||
+      msg?.key?.participantAlt ||
+      ''
+    )
+  }
+
+  return normalizarJid(
+    msg?.key?.participant ||
+    msg?.participant ||
+    chatId
+  )
 }
 
-if (chatId?.endsWith('@g.us')) {
-return normalizarJid(
-msg?.key?.participant ||
-msg?.participant ||
-msg?.key?.participantAlt ||
-''
-)
+function mismoUsuario(a, b) {
+  a = normalizarJid(a)
+  b = normalizarJid(b)
+
+  if (!a || !b) return false
+  if (a === b) return true
+
+  const tipoA = a.split('@')[1]
+  const tipoB = b.split('@')[1]
+
+  return (
+    tipoA === tipoB &&
+    ['s.whatsapp.net', 'lid'].includes(tipoA) &&
+    a.split('@')[0] === b.split('@')[0]
+  )
 }
 
-return normalizarJid(
-msg?.key?.participant ||
-msg?.participant ||
-chatId ||
-''
-)
+function formatearDuracion(segundos = 0) {
+  segundos = Number(segundos) || 0
+
+  const horas = Math.floor(segundos / 3600)
+  const minutos = Math.floor((segundos % 3600) / 60)
+  const segundosRestantes = Math.floor(segundos % 60)
+
+  return horas
+    ? `${horas}:${String(minutos).padStart(2, '0')}:${String(segundosRestantes).padStart(2, '0')}`
+    : `${minutos}:${String(segundosRestantes).padStart(2, '0')}`
 }
 
-function mismoUsuario(jidA, jidB) {
-const a = normalizarJid(jidA)
-const b = normalizarJid(jidB)
-
-if (!a || !b) return false
-if (a === b) return true
-
-const esNumero = jid => jid.endsWith('@s.whatsapp.net')
-const esLid = jid => jid.endsWith('@lid')
-
-if (esNumero(a) && esNumero(b)) {
-return a.split('@')[0] === b.split('@')[0]
-}
-
-if (esLid(a) && esLid(b)) {
-return a.split('@')[0] === b.split('@')[0]
-}
-
-return false
+function limpiarTexto(texto = '') {
+  return String(texto)
+    .replace(/[\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 150)
 }
 
 async function buscarVideo(texto) {
-const resultado = await yts(texto)
+  const resultado = await yts(texto)
 
-if (!resultado.videos?.length) {
-throw new Error('No se encontraron resultados.')
+  if (!resultado.videos?.length) {
+    throw new Error('No se encontraron resultados.')
+  }
+
+  return resultado.videos[0]
 }
 
-return resultado.videos[0]
-}
+async function obtenerUrlDirecta(url, tipo) {
+  const downloader = await cargarYtDlp()
+  let ultimoError
 
-function limpiarArchivosIntento(id) {
-try {
-for (const nombre of fs.readdirSync(DOWNLOAD_DIR)) {
-if (nombre.startsWith("${id}.")) {
-try {
-fs.unlinkSync(path.join(DOWNLOAD_DIR, nombre))
-} catch {}
-}
-}
+  for (let intento = 1; intento <= MAX_INTENTOS_DESCARGA; intento++) {
+    try {
+      await limpiarTmpSeguro()
 
-const temporalIntento = path.join(YTDLP_TEMP_DIR, id)
+      const argumentos = [
+        '--ignore-config',
+        '--no-playlist',
+        '--no-warnings',
+        '--no-cache-dir',
+        '--retries', '5',
+        '--fragment-retries', '5',
+        '--extractor-retries', '3',
+        '--js-runtimes', 'node',
+        '--remote-components', 'ejs:github'
+      ]
 
-try {
-  fs.rmSync(temporalIntento, { recursive: true, force: true })
-} catch {}
-
-} catch {}
-}
-
-function esperar(ms) {
-return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-async function descargarArchivo(url, tipo) {
-const downloader = await cargarYtDlp()
-let ultimoError
-
-for (let intento = 1; intento <= MAX_INTENTOS_DESCARGA; intento++) {
-const id = crypto.randomBytes(8).toString('hex')
-const directorioIntento = path.join(YTDLP_TEMP_DIR, id)
-const salida = path.join(DOWNLOAD_DIR, "${id}.%(ext)s")
-
-fs.mkdirSync(directorioIntento, { recursive: true, mode: 0o700 })
-
-const argumentos = [
-  url,
-  '--no-playlist',
-  '--no-warnings',
-  '--no-part',
-  '--no-mtime',
-  '--no-cache-dir',
-  '--retries',
-  '5',
-  '--fragment-retries',
-  '5',
-  '--extractor-retries',
-  '3',
-  '--file-access-retries',
-  '3',
-  '--retry-sleep',
-  '2',
-  '--js-runtimes',
-  'node',
-  '--remote-components',
-  'ejs:github',
-  '--output',
-  salida,
-  '--paths',
-  `temp:${directorioIntento}`
-]
-
-if (fs.existsSync(COOKIES_PATH)) {
-  argumentos.push('--cookies', COOKIES_PATH)
-}
-
-if (tipo === 'audio') {
-  argumentos.push(
-    '-f',
-    'bestaudio[ext=m4a]/bestaudio',
-    '--extract-audio',
-    '--audio-format',
-    'm4a',
-    '--audio-quality',
-    '0'
-  )
-} else {
-  argumentos.push(
-    '-f',
-    'best[ext=mp4][height<=720]/best[height<=720]/best',
-    '--merge-output-format',
-    'mp4'
-  )
-}
-
-try {
-  await downloader.execPromise(argumentos)
-
-  const archivos = fs.readdirSync(DOWNLOAD_DIR)
-    .filter(nombre => nombre.startsWith(`${id}.`))
-    .map(nombre => path.join(DOWNLOAD_DIR, nombre))
-    .filter(archivo => {
-      try {
-        return fs.statSync(archivo).isFile() &&
-          fs.statSync(archivo).size > 0
-      } catch {
-        return false
+      if (fs.existsSync(COOKIES_PATH)) {
+        argumentos.push('--cookies', COOKIES_PATH)
       }
-    })
 
-  if (!archivos.length) {
-    throw new Error('yt-dlp terminó, pero no generó ningún archivo.')
+      if (tipo === 'audio') {
+        argumentos.push(
+          '-f',
+          'bestaudio[ext=m4a]/bestaudio',
+          '--get-url'
+        )
+      } else {
+        argumentos.push(
+          '-f',
+          'best[ext=mp4][height<=720]/best[height<=720]/best',
+          '--get-url'
+        )
+      }
+
+      argumentos.push(url)
+
+      const resultado = await downloader.execPromise(argumentos)
+      const urls = String(resultado || '')
+        .split(/\r?\n/)
+        .map(linea => linea.trim())
+        .filter(linea => /^https?:\/\//i.test(linea))
+
+      if (!urls.length) {
+        throw new Error('yt-dlp no devolvió una URL directa.')
+      }
+
+      if (tipo === 'video' && urls.length > 1) {
+        throw new Error(
+          'El video requiere combinar varias pistas. No se puede garantizar el envío directo sin procesar archivos.'
+        )
+      }
+
+      return urls[0]
+    } catch (error) {
+      ultimoError = error
+
+      if (intento < MAX_INTENTOS_DESCARGA) {
+        await esperar(intento * 1500)
+      }
+    } finally {
+      await limpiarTmpSeguro().catch(() => {})
+    }
   }
 
-  const archivo = archivos.find(archivo =>
-    !/\.(part|ytdl|json|description|jpg|jpeg|png|webp)$/i.test(archivo)
-  ) || archivos[0]
-
-  const buffer = fs.readFileSync(archivo)
-  const extension = path.extname(archivo).slice(1) ||
-    (tipo === 'audio' ? 'm4a' : 'mp4')
-
-  try {
-    fs.rmSync(directorioIntento, { recursive: true, force: true })
-  } catch {}
-
-  return { buffer, archivo, extension }
-} catch (error) {
-  ultimoError = error
-  limpiarArchivosIntento(id)
-
-  if (intento < MAX_INTENTOS_DESCARGA) {
-    await esperar(intento * 2000)
-  }
-}
-
-}
-
-const detalle = String(ultimoError?.message || ultimoError || 'Error desconocido')
-
-throw new Error(
-"La descarga falló después de ${MAX_INTENTOS_DESCARGA} intentos. ${detalle.slice(0, 700)}"
-)
-}
-
-function buscarRegistro(chatId, messageId) {
-if (!messageId) return null
-
-limpiarRegistrosAntiguos()
-return mensajesPendientes.get(claveMensaje(chatId, messageId)) || null
+  throw new Error(
+    `No se pudo obtener la URL después de ${MAX_INTENTOS_DESCARGA} intentos: ${String(ultimoError?.message || ultimoError).slice(0, 600)}`
+  )
 }
 
 async function procesarRespuesta(sock, msg) {
-const texto = obtenerTexto(msg).trim().toLowerCase()
+  const texto = obtenerTexto(msg).toLowerCase().trim()
 
-if (!['a', 'v'].includes(texto)) return
+  if (!['a', 'v'].includes(texto)) return
 
-const chatId = obtenerChatId(msg)
-if (!chatId) return
+  const chatId = obtenerChatId(msg)
+  const contexto = obtenerContexto(msg)
+  const sentId = contexto?.stanzaId
 
-const contexto = obtenerContexto(msg)
-const messageId = contexto?.stanzaId
+  if (!chatId || !sentId) return
 
-if (!messageId) return
+  const registro = REGISTROS.get(`${chatId}:${sentId}`)
+  if (!registro) return
 
-const registro = buscarRegistro(chatId, messageId)
-if (!registro) return
+  if (!mismoUsuario(obtenerJidUsuario(msg, sock), registro.solicitante)) {
+    return
+  }
 
-const jidUsuario = obtenerJidUsuario(msg, sock)
+  const tipo = texto === 'a' ? 'audio' : 'video'
+  const clave = `${chatId}:${sentId}:${tipo}`
 
-if (!mismoUsuario(jidUsuario, registro.solicitante)) {
-return
-}
+  if (DESCARGAS_ACTIVAS.has(clave)) return
 
-const tipo = texto === 'a' ? 'audio' : 'video'
-const clave = claveDescarga(
-registro.chatId || chatId,
-registro.videoId,
-tipo
-)
+  DESCARGAS_ACTIVAS.add(clave)
 
-if (descargasActivas.has(clave) || registro[tipo] === 'procesando') {
-return
-}
-
-if (registro[tipo] === 'completada') {
-return sock.sendMessage(
-chatId,
-{ text: "《✧》 La descarga de ${tipo} de este video ya fue procesada." },
-{ quoted: msg }
-).catch(() => {})
-}
-
-descargasActivas.add(clave)
-registro[tipo] = 'procesando'
-
-let archivoDescargado
-
-try {
-await sock.sendMessage(chatId, {
-react: { text: '🕒', key: msg.key }
-})
-
-archivoDescargado = await descargarArchivo(registro.url, tipo)
-
-const nombre = limpiarTexto(registro.titulo) || tipo
-const duracion = Number(registro.duracion) || 0
-const comoDocumento = duracion > 1200
-
-let enviado
-
-if (tipo === 'audio') {
-  enviado = await sock.sendMessage(
-    chatId,
-    comoDocumento
-      ? {
-          document: archivoDescargado.buffer,
-          mimetype: 'audio/mp4',
-          fileName: `${nombre}.${archivoDescargado.extension}`,
-          caption: `➩ ${registro.titulo}`
-        }
-      : {
-          audio: archivoDescargado.buffer,
-          mimetype: 'audio/mp4',
-          fileName: `${nombre}.${archivoDescargado.extension}`
-        },
-    { quoted: msg }
-  )
-} else {
-  enviado = await sock.sendMessage(
-    chatId,
-    comoDocumento
-      ? {
-          document: archivoDescargado.buffer,
-          mimetype: 'video/mp4',
-          fileName: `${nombre}.${archivoDescargado.extension}`,
-          caption: `➩ ${registro.titulo}`
-        }
-      : {
-          video: archivoDescargado.buffer,
-          mimetype: 'video/mp4',
-          fileName: `${nombre}.${archivoDescargado.extension}`,
-          caption: `➩ ${registro.titulo}`
-        },
-    { quoted: msg }
-  )
-}
-
-registro[tipo] = 'completada'
-registro[`${tipo}MessageKey`] = enviado?.key || null
-registro.creado = Date.now()
-
-await sock.sendMessage(chatId, {
-  react: { text: '✅', key: msg.key }
-})
-
-} catch (error) {
-registro[tipo] = 'pendiente'
-
-await sock.sendMessage(chatId, {
-  react: { text: '❌', key: msg.key }
-}).catch(() => {})
-
-await sock.sendMessage(
-  chatId,
-  {
-    text: `《✧》 No se pudo descargar el ${tipo}. Puedes responder otra vez *${texto}* al mensaje original para reintentarlo.\n\n> Error: ${String(error?.message || error).slice(0, 800)}`
-  },
-  { quoted: msg }
-).catch(() => {})
-
-} finally {
-descargasActivas.delete(clave)
-
-if (archivoDescargado?.archivo) {
   try {
-    fs.unlinkSync(archivoDescargado.archivo)
-  } catch {}
-}
+    await sock.sendMessage(chatId, {
+      react: { text: '🕒', key: msg.key }
+    })
 
-}
+    const urlDirecta = await obtenerUrlDirecta(registro.url, tipo)
+    const nombre = limpiarTexto(registro.titulo) || tipo
+    const comoDocumento = Number(registro.duracion) > 1200
+
+    if (tipo === 'audio') {
+      await sock.sendMessage(
+        chatId,
+        comoDocumento
+          ? {
+              document: { url: urlDirecta },
+              mimetype: 'audio/mp4',
+              fileName: `${nombre}.m4a`,
+              caption: `➩ ${registro.titulo}`
+            }
+          : {
+              audio: { url: urlDirecta },
+              mimetype: 'audio/mp4',
+              fileName: `${nombre}.m4a`,
+              ptt: false
+            },
+        { quoted: msg }
+      )
+    } else {
+      await sock.sendMessage(
+        chatId,
+        comoDocumento
+          ? {
+              document: { url: urlDirecta },
+              mimetype: 'video/mp4',
+              fileName: `${nombre}.mp4`,
+              caption: `➩ ${registro.titulo}`
+            }
+          : {
+              video: { url: urlDirecta },
+              mimetype: 'video/mp4',
+              fileName: `${nombre}.mp4`,
+              caption: `➩ ${registro.titulo}`
+            },
+        { quoted: msg }
+      )
+    }
+
+    await sock.sendMessage(chatId, {
+      react: { text: '✅', key: msg.key }
+    })
+  } catch (error) {
+    await sock.sendMessage(chatId, {
+      react: { text: '❌', key: msg.key }
+    }).catch(() => {})
+
+    await sock.sendMessage(
+      chatId,
+      {
+        text: `《✧》 No se pudo obtener o enviar el ${tipo}.\n\n> Error: ${String(error?.message || error).slice(0, 700)}`
+      },
+      { quoted: msg }
+    ).catch(() => {})
+  } finally {
+    DESCARGAS_ACTIVAS.delete(clave)
+  }
 }
 
 function registrarEscucha(sock) {
-if (!sock || socketsRegistrados.has(sock)) return
+  if (!sock || SOCKETS_REGISTRADOS.has(sock)) return
 
-socketsRegistrados.add(sock)
+  SOCKETS_REGISTRADOS.add(sock)
 
-sock.ev.on('messages.upsert', async ({ messages }) => {
-for (const msg of messages || []) {
-if (!msg?.message) continue
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const msg of messages || []) {
+      if (!msg?.message) continue
 
-  try {
-    await procesarRespuesta(sock, msg)
-  } catch (error) {
-    console.error('[play collector]', error)
-  }
-}
-
-})
+      try {
+        await procesarRespuesta(sock, msg)
+      } catch {}
+    }
+  })
 }
 
 export default {
-command: ['play', 'mp3', 'playaudio', 'ytaudio', 'play2', 'playvid'],
-category: 'downloader',
+  command: ['play', 'mp3', 'playaudio', 'ytaudio', 'play2', 'playvid'],
+  category: 'downloader',
 
-async before({ sock }) {
-if (sock) registrarEscucha(sock)
-},
+  async before({ sock }) {
+    if (sock) registrarEscucha(sock)
+  },
 
-run: async ({ sock, msg, args, text }) => {
-const chatId = obtenerChatId(msg)
-const isChannel = chatId?.endsWith('@newsletter')
-const options = isChannel ? undefined : { quoted: msg }
-const q = (text || args?.join(' ') || '').trim()
+  run: async ({ sock, msg, args, text }) => {
+    const chatId = obtenerChatId(msg)
+    const opciones = chatId.endsWith('@newsletter')
+      ? undefined
+      : { quoted: msg }
 
-try {
-  registrarEscucha(sock)
+    const consulta = (text || args?.join(' ') || '').trim()
 
-  if (!q) {
-    return sock.sendMessage(
-      chatId,
-      {
-        text: '《✧》 Por favor, menciona el nombre o URL de YouTube que deseas descargar.'
-      },
-      options
-    )
-  }
-
-  await sock.sendMessage(chatId, {
-    react: { text: '🕒', key: msg.key }
-  })
-
-  const video = await buscarVideo(q)
-  const title = video.title || q
-  const thumb = video.thumbnail || null
-  const ytUrl = video.url
-  const author = video.author?.name || 'Desconocido'
-  const duration = video.timestamp || formatearDuracion(video.seconds)
-  const vistas = Number(video.views || 0).toLocaleString()
-
-  let infoMessage = `➩ Descargando › ${title}\n\n`
-  infoMessage += `> ❖ Canal › *${author}*\n`
-  infoMessage += `> ⴵ Duración › *${duration}*\n`
-  infoMessage += `> ❀ Vistas › *${vistas}*\n`
-  infoMessage += `> ❒ YouTube › *${ytUrl}*\n`
-  infoMessage += '\n*Responde a este mensaje con:*\n'
-  infoMessage += '> *a* para descargar audio\n'
-  infoMessage += '> *v* para descargar video'
-
-  let sent
-
-  if (thumb) {
     try {
-      const thumbBuffer = await getBuffer(thumb)
+      registrarEscucha(sock)
 
-      sent = await sock.sendMessage(
+      if (!consulta) {
+        return sock.sendMessage(
+          chatId,
+          {
+            text: '《✧》 Escribe el nombre o la URL del video de YouTube.'
+          },
+          opciones
+        )
+      }
+
+      await sock.sendMessage(chatId, {
+        react: { text: '🕒', key: msg.key }
+      })
+
+      const video = await buscarVideo(consulta)
+      const titulo = video.title || consulta
+      const url = video.url
+      const miniatura = video.thumbnail
+      const duracion = Number(video.seconds) || 0
+
+      let informacion = `➩ Descargando › ${titulo}\n\n`
+      informacion += `> ❖ Canal › *${video.author?.name || 'Desconocido'}*\n`
+      informacion += `> ⴵ Duración › *${video.timestamp || formatearDuracion(duracion)}*\n`
+      informacion += `> ❀ Vistas › *${Number(video.views || 0).toLocaleString()}*\n`
+      informacion += `> ❒ YouTube › *${url}*\n\n`
+      informacion += '*Responde a este mensaje con:*\n'
+      informacion += '> *a* para descargar audio\n'
+      informacion += '> *v* para descargar video'
+
+      let enviado
+
+      if (miniatura) {
+        try {
+          enviado = await sock.sendMessage(
+            chatId,
+            {
+              image: await getBuffer(miniatura),
+              caption: informacion
+            },
+            opciones
+          )
+        } catch {
+          enviado = await sock.sendMessage(
+            chatId,
+            { text: informacion },
+            opciones
+          )
+        }
+      } else {
+        enviado = await sock.sendMessage(
+          chatId,
+          { text: informacion },
+          opciones
+        )
+      }
+
+      if (!enviado?.key?.id) {
+        throw new Error('No se pudo registrar el mensaje de selección.')
+      }
+
+      REGISTROS.set(`${chatId}:${enviado.key.id}`, {
+        url,
+        titulo,
+        duracion,
+        solicitante: obtenerJidUsuario(msg, sock)
+      })
+
+      if (REGISTROS.size > 500) {
+        const primeraClave = REGISTROS.keys().next().value
+        if (primeraClave) REGISTROS.delete(primeraClave)
+      }
+
+      setTimeout(() => {
+        REGISTROS.delete(`${chatId}:${enviado.key.id}`)
+      }, 900000).unref?.()
+
+      await sock.sendMessage(chatId, {
+        react: { text: '✅', key: msg.key }
+      })
+    } catch (error) {
+      await sock.sendMessage(chatId, {
+        react: { text: '❌', key: msg.key }
+      }).catch(() => {})
+
+      await sock.sendMessage(
         chatId,
-        { image: thumbBuffer, caption: infoMessage },
-        options
-      )
-    } catch {
-      sent = await sock.sendMessage(
-        chatId,
-        { text: infoMessage },
-        options
-      )
+        {
+          text: `《✧》 Error: ${String(error?.message || error).slice(0, 800)}`
+        },
+        opciones
+      ).catch(() => {})
     }
-  } else {
-    sent = await sock.sendMessage(
-      chatId,
-      { text: infoMessage },
-      options
-    )
   }
-
-  const sentId = sent?.key?.id
-
-  if (!sentId) {
-    throw new Error('No se pudo obtener el ID del mensaje enviado.')
-  }
-
-  const clave = claveMensaje(chatId, sentId)
-
-  guardarRegistro(clave, {
-    chatId,
-    messageId: sentId,
-    videoId: obtenerVideoId(ytUrl),
-    url: ytUrl,
-    titulo: title,
-    duracion: video.seconds || 0,
-    solicitante: obtenerJidUsuario(msg, sock),
-    creado: Date.now(),
-    audio: 'pendiente',
-    video: 'pendiente'
-  })
-
-  await sock.sendMessage(chatId, {
-    react: { text: '✅', key: msg.key }
-  })
-} catch (error) {
-  await sock.sendMessage(chatId, {
-    react: { text: '❌', key: msg.key }
-  }).catch(() => {})
-
-  await sock.sendMessage(
-    chatId,
-    { text: `《✧》 Error: ${String(error?.message || error).slice(0, 800)}` },
-    options
-  ).catch(() => {})
-}
-
-}
 }
