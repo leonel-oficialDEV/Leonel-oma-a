@@ -74,7 +74,7 @@ export default {
 
       `: ̗̀☕︎ *ᴏᴡɴᴇʀ ::* ${dev}\n` +
       `: ̗̀ꕥ *ᴛɪᴘᴏ ::* ${botType}\n` +
-      `: ̗̀❒ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}` +
+      `: ̗̀❒ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}` +\n
       `.ৎ˚₊‧ ❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
       `.ৎ˚₊‧ ⴵ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (Colombia)\n` +
       `.ৎ˚₊‧ ❖ *ᴜʀʟ ::* ${link}\n\n` +
