@@ -468,7 +468,8 @@ export default {
       const duracion = Number(video.seconds) || 0
 
       let informacion = `➩ Descargando › ${titulo}\n\n`
-      informacion += `> ❖ Canal › *${video.author?.name || 'Desconocido'}*\n`
+      informacion += `> ❖ Canal › *${video.author?.name || 'Desconocido'}*\n
+*°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*`
       informacion += `> ⴵ Duración › *${video.timestamp || formatearDuracion(duracion)}*\n`
       informacion += `> ❀ Vistas › *${Number(video.views || 0).toLocaleString()}*\n`
       informacion += `> ❒ YouTube › *${url}*\n\n`
