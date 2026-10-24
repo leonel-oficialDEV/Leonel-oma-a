@@ -2,11 +2,11 @@ import fs from 'fs';
 import { watchFile, unwatchFile } from 'fs'
 import { fileURLToPath } from 'url'
 
-global.owner = ['393715279301', //Mai
+global.owner = ['393715279301', //
 '393715279301', //leonel
 '50492280729', //edgar 
 '584245610338', //jose
-'', //Bryan2
+'573015200599', //mai
 '', //Bryan3
 '', //Jesu
 '', //gael
