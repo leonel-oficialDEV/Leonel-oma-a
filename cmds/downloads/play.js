@@ -384,7 +384,7 @@ async function procesarRespuesta(sock, msg) {
           document: { url: descarga.archivo },
           mimetype: 'video/mp4',
           fileName: `${nombre}${extension}`,
-          caption: `➩ ${registro.titulo}`
+          caption: ` ${registro.titulo}`
         }, { quoted: msg })
       } else {
         await sock.sendMessage(chatId, {
