@@ -6,19 +6,19 @@ global.owner = ['393715279301', //Mai
 '393715279301', //leonel
 '50492280729', //edgar 
 '584245610338', //jose
-'593981607650', //Bryan2
-'584148014097', //Bryan3
-'51962502233', //Jesu
-'5216561814016', //gael
-'584122228574', //capy
-'584228028583', //capy2
-'51983564381', //shadow
-'59177684434', //alba
-'5491178205731', //albabot
+'', //Bryan2
+'', //Bryan3
+'', //Jesu
+'', //gael
+'', //capy
+'', //capy2
+'', //shadow
+'', //alba
+'', //albabot
 
 
 
-'5215521848723' // Zaako (user normal que me cayó muy bien y me dió lástima | att: Nether)
+'' // Zaako (user normal que me cayó muy bien y me dió lástima | att: Nether)
 ]
 
 global.dev = "Created by @mai";
