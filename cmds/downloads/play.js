@@ -467,7 +467,7 @@ export default {
       const miniatura = video.thumbnail
       const duracion = Number(video.seconds) || 0
 
-      let informacion = `「✦」 Descargando › ${titulo}\n\n`
+      let informacion = `「✦」 Descargando › *${titulo}*\n\n`
       informacion += `> ✦ Canal › *${video.author?.name || 'Desconocido'}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
       informacion += `> ⴵ Duración › *${video.timestamp || formatearDuracion(duracion)}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
       informacion += `> ✰ Vistas › *${Number(video.views || 0).toLocaleString()}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
