@@ -383,7 +383,7 @@ async function procesarRespuesta(sock, msg) {
         await sock.sendMessage(chatId, {
           document: { url: descarga.archivo },
           mimetype: 'video/mp4',
-          fileName: `${nombre}${extension}`,
+          fileName: `leo ${nombre}${extension}`,
           caption: ` ${registro.titulo}`
         }, { quoted: msg })
       } else {
