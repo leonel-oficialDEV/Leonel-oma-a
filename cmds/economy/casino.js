@@ -15,7 +15,7 @@ export default {
     const bot = db.getSettings(botId);
     const currency = bot.currency;
     const botname = bot.botname;    
-    db.updateCreate('chat_users', [msg.chat, msg.sender], 'lastApuesta', 0);
+    db.setCreate('chat_users', [msg.chat, msg.sender], 'lastApuesta', 0);
     const user = db.getChatUser(msg.chat, msg.sender);    
     let Aku = Math.floor(Math.random() * 101);
     let Kamu = Math.floor(Math.random() * 55);
