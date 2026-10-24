@@ -391,7 +391,7 @@ async function procesarRespuesta(sock, msg) {
           video: { url: descarga.archivo },
           mimetype: 'video/mp4',
           fileName: `${nombre}${extension}`,
-          caption: `➩ ${registro.titulo}`
+          caption: ` ${registro.titulo}`
         }, { quoted: msg })
       }
     }
