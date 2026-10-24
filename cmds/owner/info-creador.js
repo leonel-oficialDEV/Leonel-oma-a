@@ -1,5 +1,3 @@
-import PhoneNumber from 'awesome-phonenumber'
-
 const OWNERS = [
   {
     number: '584164137403',
@@ -21,10 +19,10 @@ const OWNERS = [
     website: 'https://github.com/EnderJs-CreatorGL',
     bioJid: '50558124470@s.whatsapp.net'
   },
-  // --- AQUÍ AGREGAS LA NUEVA PERSONA---
+  // --- AGREGAS NUEVA PERSONA AQUÍ ---
   // {
   //   number: '51999999999',
-  //   name: '🔥 Nuevo Staff',
+  //   name: 'Nuevo Staff',
   //   org: 'Mi equipo',
   //   role: 'Moderador',
   //   email: 'nuevo@ejemplo.com',
@@ -34,13 +32,11 @@ const OWNERS = [
   // },
 ]
 
-async function sendContactArray(sock, jid, data, quoted, options) {
-    if (!Array.isArray(data[0]) && typeof data[0] === 'string') data = [data]
+async function sendContactArray(sock, jid, data, quoted) {
     let contacts = []
     for (let [number, name, isi, isi1, isi2, isi3, isi4, isi5] of data) {
         number = number.replace(/[^0-9]/g, '')
-        let vcard = `
-BEGIN:VCARD
+        let vcard = `BEGIN:VCARD
 VERSION:3.0
 N:${name};;;
 FN:${name}
@@ -59,24 +55,21 @@ END:VCARD`.trim()
     }
     return await sock.sendMessage(jid, {
         contacts: {
-            displayName: contacts.length > 1 ? `${contacts.length} contactos` : contacts[0].displayName,
+            displayName: `${contacts.length} contactos`,
             contacts,
         }
-    }, { quoted, ...options })
+    }, { quoted })
 }
 
 export default {
   command: ['owner', 'creador'],
   category: 'info',
-  run: async ({ sock, msg, text, args, usedPrefix }) => {
+  run: async ({ sock, msg }) => {
     const chatId = msg.chat
-    const options = chatId.endsWith('@newsletter') ? undefined : { quoted: msg }
-
     try {
         let contactsData = []
-
         for (let owner of OWNERS) {
-            let bio = await sock.fetchStatus(owner.bioJid).catch(_ => ({ status: 'Sin Biografía' }))
+            let bio = await sock.fetchStatus(owner.bioJid).catch(() => ({ status: 'Sin Biografía' }))
             contactsData.push([
                 owner.number,
                 owner.name,
@@ -89,8 +82,8 @@ export default {
             ])
         }
 
-        let botNumber = sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-        let botBio = await sock.fetchStatus(`${botNumber}@s.whatsapp.net`).catch(_ => ({ status: 'Sin Biografía' }))
+        let botNumber = sock.user.id.split(':')[0].split('@')[0].replace(/[^0-9]/g, '')
+        let botBio = await sock.fetchStatus(`${botNumber}@s.whatsapp.net`).catch(() => ({ status: 'Sin Biografía' }))
         contactsData.push([
             botNumber,
             '🌸 Es el Bot',
@@ -103,10 +96,9 @@ export default {
         ])
 
         await sendContactArray(sock, chatId, contactsData, msg)
-
     } catch (e) {
         console.log(e)
-        await sock.sendMessage(chatId, { text: `Error: ${e.message}` }, options)
+        await sock.sendMessage(chatId, { text: `Error: ${e.message}` }, { quoted: msg })
     }
   }
 }
