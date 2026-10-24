@@ -471,7 +471,7 @@ export default {
       informacion += `> ✦ Canal › *${video.author?.name || 'Desconocido'}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
       informacion += `> ⴵ Duración › *${video.timestamp || formatearDuracion(duracion)}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
       informacion += `> ✰ Vistas › *${Number(video.views || 0).toLocaleString()}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
-      informacion += `> 🜸 YouTube ›  *$> {url}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
+      informacion += `> 🜸 YouTube ›  *> $ {url}*\n> *°.⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸⎯ܴ⎯̶᳞͇ࠝ⎯⃘̶⎯̸.°*\n`
       informacion += '*Responde a este mensaje con:*\n'
       informacion += '> ✦ *a* para descargar audio\n'
       informacion += '> ✦ *v* para descargar video'
