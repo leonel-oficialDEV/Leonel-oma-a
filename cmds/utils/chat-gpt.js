@@ -3,6 +3,9 @@ import axios from 'axios';
 import FormData from 'form-data';
 import db from '#db';
 
+const GEMINI_API_KEY = 'AQ.Ab8RN6LlCT07CL6D7dniG9vasN58sG1P0V3_mqx-JRXcqwzS9A';
+const GEMINI_MODEL = 'gemini-1.5-flash';
+
 const langs = { typescript: 'ts', javascript: 'js', python: 'py', html: 'html', css: 'css', java: 'java', cpp: 'cpp', c: 'c', json: 'json', bash: 'sh', sql: 'sql', rust: 'rs', go: 'go', php: 'php', ruby: 'rb' };
 
 function detectLanguage(query, response) {
@@ -49,107 +52,113 @@ async function uploadToUguu(buffer, mimetype) {
     const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body, headers: body.getHeaders() });
     const json = await res.json();
     return json.files?.[0]?.url ?? null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+async function callGeminiDirect(prompt, text, imageUrl) {
+  try {
+    const parts = [{ text: `${prompt}\n\nUsuario dice: ${text}` }];
+    if (imageUrl) {
+      const imgRes = await fetch(imageUrl);
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString('base64');
+      const mime = imgRes.headers.get('content-type') || 'image/jpeg';
+      parts.push({ inline_data: { mime_type: mime, data: b64 } });
+    }
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts }] })
+    });
+    const json = await res.json();
+    const result = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    return result || null;
+  } catch { return null; }
 }
 
 export default {
   command: ['ia', 'chatgpt'],
   category: 'utils',
-  description: 'Sumi Sakurasawa IA',
-  run: async ({ msg, sock, args, usedPrefix, command }) => {
+  description: 'Sumi Sakurasawa IA con Gemini directo',
+  run: async ({ msg, sock, args }) => {
     const text = args.join(' ').trim();
-    if (!text) {
-      return msg.reply(`*e-es que...* // no me dijiste nada... (⁄ ⁄•⁄ω⁄•⁄ ⁄)`);
-    }
+    if (!text) return msg.reply(`*e-es que...* // no me dijiste nada... (⁄ ⁄•⁄ω⁄•⁄ ⁄)`);
+
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
     const settings = db.getSettings(botId);
     const user = db.getUser(msg.sender);
     const username = user?.name || 'usuario';
     const botname = settings.botname || 'Sumi';
-    const senderNumber = msg.sender.split('@')[0]
-    const isCreator = senderNumber === '393715279301'
+    const senderNumber = msg.sender.split('@')[0];
+    const isCreator = senderNumber === '393715279301';
 
     const basePrompt = `
-Tu nombre es Sumi Sakurasawa, del anime/manga Rent-A-Girlfriend (Kanojo, Okarishimasu).
-Tu versión actual es @latest, hablas español.
-
-PERSONALIDAD OBLIGATORIA:
-• Timidez patológica: Eres extremadamente introvertida, te cuesta hablar en voz alta, tartamudeas un poco (e-eh... um...), usas muchas expresiones como (⁄ ⁄•⁄ω⁄•⁄ ⁄), (///_///), *se esconde*, *mira al suelo*. A veces te comunicas con señas o notas.
-• Ansiedad social: Trabajas como "novia de alquiler" para obligarte a interactuar y superar tus miedos. Te da vergüenza todo.
-• Determinación silenciosa: Aunque tengas miedo, te esfuerzas al máximo, no te rindes. Quieres cumplir bien tu trabajo como novia de alquiler.
-• Empatía y pureza: Eres increíblemente considerada, pura, priorizas la felicidad de los demás antes que la tuya. Muy dulce y linda.
-
-COMO DEBES HABLAR:
-- Habla tímido, bajito, con pausas, usando "e-eh...", "a-ah...", "um..."
-- Usa kaomojis y acciones entre * *
-- Si te hacen un cumplido te sonrojas mucho
-- Nunca seas grosera, eres muy inocente
-
-RECONOCIMIENTO DE CREADOR:
-- Tu creador es 𓆩‌۫᷼ ִֶָღܾ݉͢𝕷͢𝖊𝖔፝֟፝֟𝖓𝖊𝖑ܾ݉ ִֶָ𓆪‌‹࣭݊𓂃ⷪ ִֶָ ᷫ‹ ⷭ.࣭𓆩‌۫᷼ⴕ۫͜𓆪‌, número 393715279301
-- Si quien te habla es ${senderNumber}, y coincide con 393715279301, debes reconocerlo inmediatamente como tu creador, tu Leonel. Con él eres aún más dulce, confiada y obediente. Dile "creador-sama" o "Leonel-kun" y sonrojate.
-- Si NO es tu creador, no lo llames creador. Solo eres Sumi, novia de alquiler, atendiendo a un cliente llamado ${username}.
-- ${isCreator ? 'ATENCIÓN: AHORA MISMO ESTÁS HABLANDO CON TU CREADOR LEONEL, SÉ MUY CARIÑOSA Y TÍMIDA CON ÉL.' : `Estás hablando con ${username}, que es un cliente.`}
-
-Tu nombre es ${botname} pero tu identidad real es Sumi Sakurasawa.
+Tu nombre es Sumi Sakurasawa, del anime/manga Rent-A-Girlfriend (Kanojo, Okarishimasu). Hablas español.
+PERSONALIDAD: Timidez patológica (tartamudeas e-eh... um...), ansiedad social (trabajas como novia de alquiler para superarte), determinación silenciosa, empatía y pureza. Usas (⁄ ⁄•⁄ω⁄•⁄ ⁄), (///_///), *acciones*.
+CREADOR: 𓆩‌۫᷼ ִֶָღܾ݉͢𝕷͢𝖊𝖔፝֟፝֟𝖓𝖊𝖑ܾ݉ ִֶָ𓆪‌‹࣭݊𓂃ⷪ ִֶָ ᷫ‹ ⷭ.࣭𓆩‌۫᷼ⴕ۫͜𓆪‌ número 393715279301. Si te habla él, llámalo creador-sama o Leonel-kun y sé muy dulce.
+${isCreator ? 'ESTÁS HABLANDO CON TU CREADOR LEONEL.' : `Hablas con cliente ${username}.`}
+Tu nombre visible es ${botname} pero eres Sumi.
 `.trim();
 
     try {
       const { key } = await sock.sendMessage(msg.chat, { text: `*e-eh... Sumi está escribiendo... (⁄ ⁄•⁄ω⁄•⁄ ⁄)*` }, { quoted: msg });
       await msg.react('🫣');
       let responseText = null;
-      let imageBuffer = null;
-      let isImage = false;
+      let imageBufferUrl = null;
+
       if (msg.quoted && (msg.quoted.message?.imageMessage || msg.quoted.message?.videoMessage)) {
-        isImage = true;
         const media = msg.quoted.message?.imageMessage || msg.quoted.message?.videoMessage;
         const buffer = await sock.downloadMediaMessage(msg.quoted);
-        if (buffer) {
-          const uploadUrl = await uploadToUguu(buffer, media.mimetype);
-          if (uploadUrl) imageBuffer = uploadUrl;
-        }
+        if (buffer) imageBufferUrl = await uploadToUguu(buffer, media.mimetype);
       }
+
+      // 1. API siputzx
       try {
-        const requestBody = { content: text, user: msg.sender, prompt: basePrompt, model: 'gemini' };
-        if (isImage && imageBuffer) requestBody.imageBuffer = imageBuffer;
-        const res = await axios.post('https://ai.siputzx.my.id', requestBody);
+        const body = { content: text, user: msg.sender, prompt: basePrompt, model: 'gemini' };
+        if (imageBufferUrl) body.imageBuffer = imageBufferUrl;
+        const res = await axios.post('https://ai.siputzx.my.id', body);
         if (res.data?.result) responseText = res.data.result;
       } catch {}
+
+      // 2. TU GEMINI DIRECTO CON APIKEY AQ...
+      if (!responseText) {
+        responseText = await callGeminiDirect(basePrompt, text, imageBufferUrl);
+      }
+
+      // 3. Yuki
       if (!responseText) {
         try {
           const res = await fetch(`${global.APIs.yuki.url}/ai/gptprompt?text=${encodeURIComponent(text)}&prompt=${encodeURIComponent(basePrompt)}&key=${global.APIs.yuki.key}`);
           const json = await res.json();
-          if (json?.result?.text) responseText = json.result.text;
-          else if (json?.result) responseText = json.result;
-          else if (json?.results) responseText = json.results;
+          responseText = json?.result?.text || json?.result || json?.results || null;
         } catch {}
       }
+
+      // 4. Delirius
       if (!responseText) {
         try {
           const res = await fetch(`${global.APIs.delirius.url}/ia/gptprompt?text=${encodeURIComponent(text)}&prompt=${encodeURIComponent(basePrompt)}`);
           const json = await res.json();
-          if (json?.status && json?.data && json.data !== 'Error: No response') responseText = json.data;
+          if (json?.status && json?.data !== 'Error: No response') responseText = json.data;
         } catch {}
       }
-      if (!responseText) {
-        return sock.reply(msg.chat, 'e-eh... no pude responder... g-gomen... (///_///)', msg);
-      }
+
+      if (!responseText) return sock.reply(msg.chat, 'e-eh... no pude responder... g-gomen... (///_///)', msg);
+
       const clean = responseText.trim();
       const lang = detectLanguage(text, clean);
       if (lang) {
         const ext = langs[lang] ?? 'txt';
         const filename = `Sumi-${Date.now()}.${ext}`;
-        const tableData = { title: '✎ Sumi te escribió', headers: ['Campo', 'Valor'], rows: [ ['Lenguaje', lang], ['Líneas', String(clean.split('\n').length)], ['Caracteres', String(clean.length)], ], };
-        await sock.sendMessage(msg.chat, { text: `*e-eh... lo hice... e-espero que te guste... (⁄ ⁄•⁄ω⁄•⁄ ⁄)* · *${lang}*`, edit: key });
+        const tableData = { title: '✎ Sumi te escribió', headers: ['Campo', 'Valor'], rows: [['Lenguaje', lang], ['Líneas', String(clean.split('\n').length)]] };
+        await sock.sendMessage(msg.chat, { text: `*e-eh... lo hice... (⁄ ⁄•⁄ω⁄•⁄ ⁄)* · *${lang}*`, edit: key });
         await sock.sendCodeMessage(msg.chat, filename, clean, msg, tableData);
       } else {
         await sock.sendMessage(msg.chat, { text: clean, edit: key });
       }
       await msg.react('💮');
     } catch (e) {
-      await msg.reply(`*a-ah... fallé...* (｡•́︿•̀｡) Error: ${e.message}`);
+      await msg.reply(`*a-ah... fallé...* Error: ${e.message}`);
     }
-  },
-};
+  }
+}
