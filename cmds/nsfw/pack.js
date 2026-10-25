@@ -1,72 +1,87 @@
 import fetch from 'node-fetch';
-const handler = async (m, {conn, command}) => {
+const handler = async (m, {conn, command, usedPrefix}) => {
   if (!db.data.chats[m.chat].nsfw && m.isGroup) throw '🚩 *¡Estos comandos están desactivados!*';
-
-  const distinct = (arr, n) => {
-    let unique = [...new Set(arr)];
-    return unique.sort(() => Math.random() - 0.5).slice(0, Math.min(n, unique.length));
-  };
 
    switch (command) {
     case 'pack':
-      for (let url of distinct(pack, 5)) {
-        await conn.sendMessage(m.chat, { 
-          image: { url: url }, 
-          caption: `*🥵 Pack 🥵*`, 
-          footer: dev, 
-          buttons: [{ buttonId: `.pack`, buttonText: { displayText: 'Siguiente' } }],
-          viewOnce: true,
-          headerType: 4
-        }, { quoted: m });
-      }
+      const url = await pack[Math.floor(Math.random() * pack.length)];
+      conn.sendMessage(m.chat, { 
+        image: { url: url }, 
+        caption: `*🥵 Pack 🥵*`, 
+        footer: dev, 
+        buttons: [
+            {
+                buttonId: `.pack`,
+                buttonText: { displayText: 'Siguiente' }
+            }
+        ],
+        viewOnce: true,
+        headerType: 4
+    }, { quoted: m });
       break;
     case 'pack2':
-      for (let url of distinct(packgirl, 5)) {
-        await conn.sendMessage(m.chat, { 
-          image: { url: url }, 
-          caption: `*🥵 Pack 2 🥵*`, 
-          footer: dev, 
-          buttons: [{ buttonId: `.pack2`, buttonText: { displayText: 'Siguiente' } }],
-          viewOnce: true,
-          headerType: 4
-        }, { quoted: m });
-      }
+      const url2 = await packgirl[Math.floor(Math.random() * packgirl.length)];
+      conn.sendMessage(m.chat, { 
+        image: { url: url2 }, 
+        caption: `*🥵 Pack 2 🥵*`, 
+        footer: dev, 
+        buttons: [
+            {
+                buttonId: `.pack2`,
+                buttonText: { displayText: 'Siguiente' }
+            }
+        ],
+        viewOnce: true,
+        headerType: 4
+    }, { quoted: m });
       break;
     case 'pack3':
-      for (let url of distinct(packmen, 5)) {
-        await conn.sendMessage(m.chat, { 
-          image: { url: url }, 
-          caption: `*🥵 Pack 3 🥵*`, 
-          footer: dev, 
-          buttons: [{ buttonId: `.pack3`, buttonText: { displayText: 'Siguiente' } }],
-          viewOnce: true,
-          headerType: 4
-        }, { quoted: m });
-      }
+      const url3 = await packmen[Math.floor(Math.random() * packmen.length)];
+      conn.sendMessage(m.chat, { 
+        image: { url: url3 }, 
+        caption: `*🥵 Pack 3 🥵*`, 
+        footer: dev, 
+        buttons: [
+            {
+                buttonId: `.pack3`,
+                buttonText: { displayText: 'Siguiente' }
+            }
+        ],
+        viewOnce: true,
+        headerType: 4
+    }, { quoted: m });
       break;
     case 'videoxxx': case 'vídeoxxx':
-      for (let url of distinct(videosxxxc, 3)) {
-        await conn.sendMessage(m.chat, { 
-          video: { url: url },
-          caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
-          footer: dev, 
-          buttons: [{ buttonId: `.videoxxx`, buttonText: { displayText: 'Siguiente' } }],
-          viewOnce: true,
-          headerType: 4
-        }, { quoted: m });
-      }
+      const url4 = await videosxxxc[Math.floor(Math.random() * videosxxxc.length)];
+   await conn.sendMessage(m.chat, { 
+        video: { url: url4 },
+        caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
+        footer: dev, 
+        buttons: [
+            {
+                buttonId: `.videoxxx`,
+                buttonText: { displayText: 'Siguiente' }
+            }
+        ],
+        viewOnce: true,
+        headerType: 4
+    }, { quoted: m });
       break;
     case 'videoxxxlesbi': case 'videolesbixxx': case 'pornolesbivid': case 'pornolesbianavid': case 'pornolesbiv': case 'pornolesbianav': case 'pornolesv':
-      for (let url of distinct(videosxxxc2, 3)) {
-        await conn.sendMessage(m.chat, { 
-          video: { url: url },
-          caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
-          footer: dev, 
-          buttons: [{ buttonId: `.videoxxxlesbi`, buttonText: { displayText: 'Siguiente' } }],
-          viewOnce: true,
-          headerType: 4
-        }, { quoted: m });
-      }
+      const url5 = await videosxxxc2[Math.floor(Math.random() * videosxxxc2.length)];
+   await conn.sendMessage(m.chat, { 
+        video: { url: url5 },
+        caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
+        footer: dev, 
+        buttons: [
+            {
+                buttonId: `.videoxxxlesbi`,
+                buttonText: { displayText: 'Siguiente' }
+            }
+        ],
+        viewOnce: true,
+        headerType: 4
+    }, { quoted: m });
       break;
   }
 };
@@ -175,9 +190,18 @@ global.videosxxxc = [
   'https://telegra.ph/file/61486d45a8a3ea95a7c86.mp4',
   'https://telegra.ph/file/76ba0dc2a07f491756377.mp4',
   'https://telegra.ph/file/831bb88f562bef3f1a15d.mp4',
+  'https://telegra.ph/file/ee2cf1b359d6eef50d7b7.mp4',
   'https://telegra.ph/file/598857924f3a29ffd37ae.mp4',
   'https://telegra.ph/file/528caef6ea950ec45aeef.mp4',
+  'https://telegra.ph/file/4a270d9945ac46f42d95c.mp4',
+  'https://telegra.ph/file/958c11e84d271e783ea3f.mp4',
+  'https://telegra.ph/file/f753759342337c4012b3f.mp4',
+  'https://telegra.ph/file/379cee56c908dd536dd33.mp4',
+  'https://telegra.ph/file/411d8f59a5cefc2a1d227.mp4',
+  'https://telegra.ph/file/76ba0dc2a07f491756377.mp4',
+  'https://telegra.ph/file/831bb88f562bef3f1a15d.mp4',
 ];
+
 global.videosxxxc2 = [
 "https://telegra.ph/file/2dfb1ad0cab22951e30d1.mp4",
 "https://telegra.ph/file/c430651857023968d3a76.mp4",
