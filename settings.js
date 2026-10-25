@@ -4,13 +4,13 @@ import { fileURLToPath } from 'url'
 
 global.owner = ['393715279301', //
 '393715279301', //leonel
-'50492280729', //edgar 
+'50492280729', //edar
 '584245610338', //jose
 '573015200599', //mai
 '104260465336559@lid', //lid de mai
-'', //Jesu
-'', //gael
-'', //capy
+'524624807066', //Tutankamon
+'524341073906', //edgar
+'529996220985', //Elezpya
 '', //capy2
 '', //shadow
 '', //alba
