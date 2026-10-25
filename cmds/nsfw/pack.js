@@ -1,88 +1,71 @@
-const handler = async (m, {conn}) => {
-  try {
-    if (!db.data.chats[m.chat].nsfw && m.isGroup) throw '🚩 *¡Estos comandos están desactivados!*';
+import fetch from 'node-fetch';
+const handler = async (m, {conn, command}) => {
+  if (!db.data.chats[m.chat].nsfw && m.isGroup) throw '🚩 *¡Estos comandos están desactivados!*';
 
-    const distinct = (arr, n) => {
-      let unique = [...new Set(arr)];
-      let shuffled = unique.sort(() => Math.random() - 0.5);
-      return shuffled.slice(0, Math.min(n, shuffled.length));
-    };
+  const distinct = (arr, n) => {
+    let unique = [...new Set(arr)];
+    return unique.sort(() => Math.random() - 0.5).slice(0, Math.min(n, unique.length));
+  };
 
-    switch (m.command || conn.getName) {
-      case 'pack': {
-        let urls = distinct(global.pack, 5);
-        for (let u of urls) {
-          await conn.sendMessage(m.chat, { 
-            image: { url: u }, 
-            caption: `*🥵 Pack 🥵*`, 
-            footer: dev, 
-            buttons: [{ buttonId: `.pack`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true, headerType: 4
-          }, { quoted: m });
-        }
-        break;
+   switch (command) {
+    case 'pack':
+      for (let url of distinct(pack, 5)) {
+        await conn.sendMessage(m.chat, { 
+          image: { url: url }, 
+          caption: `*🥵 Pack 🥵*`, 
+          footer: dev, 
+          buttons: [{ buttonId: `.pack`, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true, headerType: 4
+        }, { quoted: m });
       }
-      case 'pack2': {
-        let urls = distinct(global.packgirl, 5);
-        for (let u of urls) {
-          await conn.sendMessage(m.chat, { 
-            image: { url: u }, 
-            caption: `*🥵 Pack 2 🥵*`, 
-            footer: dev, 
-            buttons: [{ buttonId: `.pack2`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true, headerType: 4
-          }, { quoted: m });
-        }
-        break;
+      break;
+    case 'pack2':
+      for (let url of distinct(packgirl, 5)) {
+        await conn.sendMessage(m.chat, { 
+          image: { url: url }, 
+          caption: `*🥵 Pack 2 🥵*`, 
+          footer: dev, 
+          buttons: [{ buttonId: `.pack2`, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true, headerType: 4
+        }, { quoted: m });
       }
-      case 'pack3': {
-        let urls = distinct(global.packmen, 5);
-        for (let u of urls) {
-          await conn.sendMessage(m.chat, { 
-            image: { url: u }, 
-            caption: `*🥵 Pack 3 🥵*`, 
-            footer: dev, 
-            buttons: [{ buttonId: `.pack3`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true, headerType: 4
-          }, { quoted: m });
-        }
-        break;
+      break;
+    case 'pack3':
+      for (let url of distinct(packmen, 5)) {
+        await conn.sendMessage(m.chat, { 
+          image: { url: url }, 
+          caption: `*🥵 Pack 3 🥵*`, 
+          footer: dev, 
+          buttons: [{ buttonId: `.pack3`, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true, headerType: 4
+        }, { quoted: m });
       }
-      case 'videoxxx':
-      case 'vídeoxxx': {
-        let urls = distinct(global.videosxxxc, 3);
-        for (let u of urls) {
-          await conn.sendMessage(m.chat, { 
-            video: { url: u },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
-            footer: dev, 
-            buttons: [{ buttonId: `.videoxxx`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true, headerType: 4
-          }, { quoted: m });
-        }
-        break;
+      break;
+    case 'videoxxx': case 'vídeoxxx':
+      for (let url of distinct(videosxxxc, 3)) {
+        await conn.sendMessage(m.chat, { 
+          video: { url: url },
+          caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
+          footer: dev, 
+          buttons: [{ buttonId: `.videoxxx`, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true, headerType: 4
+        }, { quoted: m });
       }
-      default: {
-        let urls = distinct(global.videosxxxc2, 3);
-        for (let u of urls) {
-          await conn.sendMessage(m.chat, { 
-            video: { url: u },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
-            footer: dev, 
-            buttons: [{ buttonId: `.videoxxxlesbi`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true, headerType: 4
-          }, { quoted: m });
-        }
-        break;
+      break;
+    case 'videoxxxlesbi': case 'videolesbixxx': case 'pornolesbivid': case 'pornolesbianavid': case 'pornolesbiv': case 'pornolesbianav': case 'pornolesv':
+      for (let url of distinct(videosxxxc2, 3)) {
+        await conn.sendMessage(m.chat, { 
+          video: { url: url },
+          caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, 
+          footer: dev, 
+          buttons: [{ buttonId: `.videoxxxlesbi`, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true, headerType: 4
+        }, { quoted: m });
       }
-    }
-  } catch (e) {
-    console.log(e);
-    m.reply(`Error: ${e.message}`);
+      break;
   }
 };
-
-handler.help = ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi'];
+handler.help = ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'];
 handler.command = ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'];
 handler.tags = ['nsfw'];
 export default handler;
