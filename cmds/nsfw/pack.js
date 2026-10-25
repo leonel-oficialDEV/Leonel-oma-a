@@ -3,77 +3,92 @@ import db from '#db';
 export default {
   command: ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'],
   category: 'nsfw',
-  description: 'packs',
+  description: 'packs sin repetir',
   run: async ({ msg, sock, command }) => {
     const chat = db.getChat(msg.chat);
     if (!chat.nsfw) return msg.reply(`ꕥ El contenido *NSFW* está desactivado en este grupo.`);
 
-    const distinct = (arr, n) => {
-      let unique = [...new Set(arr)];
-      return unique.sort(() => Math.random() - 0.5).slice(0, Math.min(n, unique.length));
+    // Inicializar memoria del chat
+    if (!chat.packMemory) chat.packMemory = {};
+    
+    const getNext = (key, sourceArr) => {
+      let unique = [...new Set(sourceArr)];
+      if (!chat.packMemory[key] || chat.packMemory[key].length === 0) {
+        // Si no hay memoria o ya se acabaron, reiniciar con todos mezclados
+        chat.packMemory[key] = unique.sort(() => Math.random() - 0.5);
+      }
+      // Sacar uno y devolverlo
+      return chat.packMemory[key].pop();
     };
+
+    let url, caption, buttonId;
 
     switch (command) {
       case 'pack':
-        for (let url of distinct(global.pack, 5)) {
-          await sock.sendMessage(msg.chat, {
-            image: { url },
-            caption: `*🥵 Pack 🥵*`,
-            footer: dev,
-            buttons: [{ buttonId: `.pack`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true,
-            headerType: 4
-          }, { quoted: msg });
-        }
+        url = getNext('pack', global.pack);
+        caption = `*🥵 Pack 🥵*`;
+        buttonId = `.pack`;
+        await sock.sendMessage(msg.chat, {
+          image: { url },
+          caption,
+          footer: dev,
+          buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true,
+          headerType: 4
+        }, { quoted: msg });
         break;
       case 'pack2':
-        for (let url of distinct(global.packgirl, 5)) {
-          await sock.sendMessage(msg.chat, {
-            image: { url },
-            caption: `*🥵 Pack 2 🥵*`,
-            footer: dev,
-            buttons: [{ buttonId: `.pack2`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true,
-            headerType: 4
-          }, { quoted: msg });
-        }
+        url = getNext('packgirl', global.packgirl);
+        caption = `*🥵 Pack 2 🥵*`;
+        buttonId = `.pack2`;
+        await sock.sendMessage(msg.chat, {
+          image: { url },
+          caption,
+          footer: dev,
+          buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true,
+          headerType: 4
+        }, { quoted: msg });
         break;
       case 'pack3':
-        for (let url of distinct(global.packmen, 5)) {
-          await sock.sendMessage(msg.chat, {
-            image: { url },
-            caption: `*🥵 Pack 3 🥵*`,
-            footer: dev,
-            buttons: [{ buttonId: `.pack3`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true,
-            headerType: 4
-          }, { quoted: msg });
-        }
+        url = getNext('packmen', global.packmen);
+        caption = `*🥵 Pack 3 🥵*`;
+        buttonId = `.pack3`;
+        await sock.sendMessage(msg.chat, {
+          image: { url },
+          caption,
+          footer: dev,
+          buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true,
+          headerType: 4
+        }, { quoted: msg });
         break;
       case 'videoxxx':
       case 'vídeoxxx':
-        for (let url of distinct(global.videosxxxc, 3)) {
-          await sock.sendMessage(msg.chat, {
-            video: { url },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`,
-            footer: dev,
-            buttons: [{ buttonId: `.videoxxx`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true,
-            headerType: 4
-          }, { quoted: msg });
-        }
+        url = getNext('videosxxxc', global.videosxxxc);
+        caption = `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`;
+        buttonId = `.videoxxx`;
+        await sock.sendMessage(msg.chat, {
+          video: { url },
+          caption,
+          footer: dev,
+          buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true,
+          headerType: 4
+        }, { quoted: msg });
         break;
       default:
-        for (let url of distinct(global.videosxxxc2, 3)) {
-          await sock.sendMessage(msg.chat, {
-            video: { url },
-            caption: `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`,
-            footer: dev,
-            buttons: [{ buttonId: `.videoxxxlesbi`, buttonText: { displayText: 'Siguiente' } }],
-            viewOnce: true,
-            headerType: 4
-          }, { quoted: msg });
-        }
+        url = getNext('videosxxxc2', global.videosxxxc2);
+        caption = `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`;
+        buttonId = `.videoxxxlesbi`;
+        await sock.sendMessage(msg.chat, {
+          video: { url },
+          caption,
+          footer: dev,
+          buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+          viewOnce: true,
+          headerType: 4
+        }, { quoted: msg });
         break;
     }
   }
