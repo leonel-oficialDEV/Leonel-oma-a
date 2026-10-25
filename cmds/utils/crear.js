@@ -13,54 +13,43 @@ export default {
   description: 'Crear imagen con IA',
   run: async ({ msg, sock, args, usedPrefix }) => {
     const text = args.join(' ').trim();
-    
     if (!text) {
-      return sock.sendMessage(msg.chat, {
-        text: `❗ *Por favor ingresa un prompt para crear la imagen.*\n\n*Ejemplo:* ${usedPrefix}crear carros realistas`,
-      }, { quoted: msg });
+      return sock.sendMessage(msg.chat, { text: `❗ *Usa:* ${usedPrefix}crear carros realistas` }, { quoted: msg });
     }
 
-    await sock.sendMessage(msg.chat, { text: `🔨 *SUMI BOT-Ai está creando tu imagen... Por favor espera...*` }, { quoted: msg });
+    await sock.sendMessage(msg.chat, { text: `🔨 *Generando...*` }, { quoted: msg });
 
-    let filePath = null;
     try {
       await fs.promises.mkdir(TMP_DIR, { recursive: true });
       
       const encodedApiUrl = "aHR0cHM6Ly9lbGlhc2FyLXl0LWFwaS52ZXJjZWwuYXBwL2FwaS9haS90ZXh0MmltZw==";
       const apiUrl = `${Buffer.from(encodedApiUrl, "base64").toString()}?prompt=${encodeURIComponent(text)}`;
 
-      const response = await fetch(apiUrl);
-      if (!response.ok) throw new Error(`API error ${response.status}`);
+      const res = await fetch(apiUrl);
+      if (!res.ok) throw new Error(`API ${res.status}`);
 
-      // Algunas veces la API devuelve JSON con url, otras veces la imagen directa
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (contentType.includes('application/json')) {
-        const json = await response.json();
-        // Si la API devuelve { url: ... } o { image: ... }
-        const imageUrl = json.url || json.image || json.result;
-        if (!imageUrl) throw new Error('La API no devolvió imagen');
-        
+      let buffer;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('json')) {
+        const json = await res.json();
+        const imageUrl = json.url || json.image || json.result || json.data;
+        if (!imageUrl) throw new Error(JSON.stringify(json).slice(0,200));
         const imgRes = await fetch(imageUrl);
-        const buffer = Buffer.from(await imgRes.arrayBuffer());
-        filePath = path.join(TMP_DIR, `crear_${Date.now()}.jpg`);
-        await fs.promises.writeFile(filePath, buffer);
+        buffer = Buffer.from(await imgRes.arrayBuffer());
       } else {
-        const buffer = Buffer.from(await response.arrayBuffer());
-        filePath = path.join(TMP_DIR, `crear_${Date.now()}.jpg`);
-        await fs.promises.writeFile(filePath, buffer);
+        buffer = Buffer.from(await res.arrayBuffer());
       }
 
       await sock.sendMessage(msg.chat, {
-        image: { url: filePath },
-        caption: `🖼️ *Aquí está tu imagen generada por SUMI-Ai:*\n\n*Prompt:* ${text}`,
+        image: buffer,
+        mimetype: 'image/jpeg',
+        caption: `🖼️ *Imagen:* ${text}`,
+        fileName: 'imagen.jpg'
       }, { quoted: msg });
 
-    } catch (error) {
-      console.error("Error crear:", error);
-      await sock.sendMessage(msg.chat, { text: `❌ *Error al generar la imagen:*\n${error.message}` }, { quoted: msg });
-    } finally {
-      if (filePath) fs.promises.unlink(filePath).catch(()=>{});
+    } catch (e) {
+      console.error(e);
+      await sock.sendMessage(msg.chat, { text: `❌ Error: ${e.message}` }, { quoted: msg });
     }
   }
 };
