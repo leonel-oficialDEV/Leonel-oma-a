@@ -1,85 +1,61 @@
-import db from "#db"
+import fetch from 'node-fetch';
 
-export default {
-  command: [
-    'pack', 'pack2', 'pack3', 
-    'videoxxx', 'vídeoxxx', 
-    'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'
-  ],
-  category: 'nsfw',
-  run: async ({ msg, sock, command }) => {
-    try {
-      const isGroup = msg.isGroup ?? msg.chat?.endsWith('@g.us')
-      if (isGroup) {
-        const chatData = (typeof db?.getChat === 'function' ? await db.getChat(msg.chat) : global.db?.data?.chats?.[msg.chat]) || {}
-        if (chatData.nsfw === false) {
-          return msg.reply('《✤》 *¡Estos comandos están desactivados en este grupo!*')
-        }
-      }
+const handler = async (m, { conn, command }) => {
+  if (!db.data.chats[m.chat].nsfw && m.isGroup) throw '🚩 *¡Estos comandos están desactivados!*';
 
-      // Función auxiliar para enviar medios reintentando si algún enlace está caído
-      const sendRandomMedia = async (list, type, caption) => {
-        const shuffled = [...list].sort(() => 0.5 - Math.random())
-        let sent = false
+  const getRandom = (arr, n) => {
+    let shuffled = [...arr].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, n);
+  };
 
-        for (const url of shuffled.slice(0, 5)) { // Prueba hasta 5 enlaces distintos si fallan
-          try {
-            const res = await fetch(url, { method: 'HEAD' })
-            if (!res.ok) continue // Si el enlace da 404, salta al siguiente
+  const sendAlbum = async (urls, caption, buttonId) => {
+    let medias = urls.map((url, i) => {
+      let isVideo = url.endsWith('.mp4');
+      return isVideo 
+        ? { type: 'video', data: { url }, caption: i === 0 ? caption : '' }
+        : { type: 'image', data: { url }, caption: i === 0 ? caption : '' };
+    });
+    await conn.sendAlbumMessage(m.chat, medias, { quoted: m });
+    await conn.sendMessage(m.chat, {
+      text: caption,
+      footer: dev,
+      buttons: [{ buttonId, buttonText: { displayText: 'Siguiente' } }],
+      headerType: 1
+    }, { quoted: m });
+  };
 
-            const payload = type === 'video' 
-              ? { video: { url }, mimetype: 'video/mp4', caption }
-              : { image: { url }, caption }
-
-            await sock.sendMessage(msg.chat, payload, { quoted: msg })
-            sent = true
-            break
-          } catch {
-            continue
-          }
-        }
-
-        if (!sent) {
-          return msg.reply('《✤》 *No se pudo enviar el archivo.* Todos los enlaces probados están caídos (Telegraph eliminó estos videos). Debes cambiar las URLs por enlaces nuevos (ej. de Catbox o Qu.ax).')
-        }
-      }
-
-      switch (command) {
-        case 'pack':
-          await sendRandomMedia(pack, 'image', '*🥵 Pack 🥵*')
-          break
-
-        case 'pack2':
-          await sendRandomMedia(packgirl, 'image', '*🥵 Pack 2 🥵*')
-          break
-
-        case 'pack3':
-          await sendRandomMedia(packmen, 'image', '*🥵 Pack 3 🥵*')
-          break
-
-        case 'videoxxx':
-        case 'vídeoxxx':
-          await sendRandomMedia(videosxxxc, 'video', '*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*')
-          break
-
-        case 'videoxxxlesbi':
-        case 'videolesbixxx':
-        case 'pornolesbivid':
-        case 'pornolesbianavid':
-        case 'pornolesbiv':
-        case 'pornolesbianav':
-        case 'pornolesv':
-          await sendRandomMedia(videosxxxc2, 'video', '*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*')
-          break
-      }
-    } catch (err) {
-      console.error(err)
-      return msg.reply(typeof msgglobal !== 'undefined' ? msgglobal : '❌ Ocurrió un error inesperado al ejecutar el comando.')
-    }
+  switch (command) {
+    case 'pack':
+      await sendAlbum(getRandom(pack, 5), `*🥵 Pack 🥵*`, `.pack`);
+      break;
+    case 'pack2':
+      await sendAlbum(getRandom(packgirl, 5), `*🥵 Pack 2 🥵*`, `.pack2`);
+      break;
+    case 'pack3':
+      await sendAlbum(getRandom(packmen, 5), `*🥵 Pack 3 🥵*`, `.pack3`);
+      break;
+    case 'videoxxx':
+    case 'vídeoxxx':
+      await sendAlbum(getRandom(videosxxxc, 3), `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, `.videoxxx`);
+      break;
+    case 'videoxxxlesbi':
+    case 'videolesbixxx':
+    case 'pornolesbivid':
+    case 'pornolesbianavid':
+    case 'pornolesbiv':
+    case 'pornolesbianav':
+    case 'pornolesv':
+      await sendAlbum(getRandom(videosxxxc2, 3), `*ᴅɪsғʀᴜᴛᴀ ᴅᴇʟ ᴠɪᴅᴇᴏ 🥵*`, `.videoxxxlesbi`);
+      break;
   }
-}
+};
 
-const pack = [
+handler.help = ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'];
+handler.command = ['pack', 'pack2', 'pack3', 'videoxxx', 'vídeoxxx', 'videoxxxlesbi', 'videolesbixxx', 'pornolesbivid', 'pornolesbianavid', 'pornolesbiv', 'pornolesbianav', 'pornolesv'];
+handler.tags = ['nsfw'];
+export default handler;
+
+global.pack = [
   'https://telegra.ph/file/957fe4031132ef90b66ec.jpg',
   'https://telegra.ph/file/c4b85bd53030cb648382f.jpg',
   'https://telegra.ph/file/df56f8a76145df9c923ad.jpg',
@@ -110,10 +86,9 @@ const pack = [
   'https://telegra.ph/file/14ab9bd02f24e0f1a1a03.jpg',
   'https://telegra.ph/file/e02bf6bc9227f7f8b7e2a.jpg',
   'https://telegra.ph/file/ab55fca1d6b602b1a69df.jpg',
-  'https://telegra.ph/file/42105cac3666b37da3d1c.jpg'
-]
-
-const packgirl = [
+  'https://telegra.ph/file/42105cac3666b37da3d1c.jpg',
+];
+global.packgirl = [
   'https://telegra.ph/file/c0da7289bee2d97048feb.jpg',
   'https://telegra.ph/file/b8564166f9cac4d843db3.jpg',
   'https://telegra.ph/file/fdefd621a17712be15e0e.jpg',
@@ -142,10 +117,9 @@ const packgirl = [
   'https://telegra.ph/file/1ac7657a5e7b354cd9991.jpg',
   'https://telegra.ph/file/14161eab0c1d919dc3218.jpg',
   'https://telegra.ph/file/810411b9128fe11dd639a.jpg',
-  'https://telegra.ph/file/5fe7e98533754b007e7a1.jpg'
-]
-
-const packmen = [
+  'https://telegra.ph/file/5fe7e98533754b007e7a1.jpg',
+];
+global.packmen = [
   'https://telegra.ph/file/bf303b19b9834f90e9617.jpg',
   'https://telegra.ph/file/36ef2b807251dfccd17c2.jpg',
   'https://telegra.ph/file/bcc34403d16de829ea5d2.jpg',
@@ -166,10 +140,9 @@ const packmen = [
   'https://telegra.ph/file/049a8c611a838ea2f6daa.jpg',
   'https://telegra.ph/file/37b35fbc7e2ee73482ee1.jpg',
   'https://telegra.ph/file/9bcfade24ae85cd417f06.jpg',
-  'https://telegra.ph/file/ac0c711585f4300c54355.jpg'
-]
-
-const videosxxxc = [
+  'https://telegra.ph/file/ac0c711585f4300c54355.jpg',
+];
+global.videosxxxc = [
   'https://telegra.ph/file/4a270d9945ac46f42d95c.mp4',
   'https://telegra.ph/file/958c11e84d271e783ea3f.mp4',
   'https://telegra.ph/file/f753759342337c4012b3f.mp4',
@@ -183,16 +156,15 @@ const videosxxxc = [
   'https://telegra.ph/file/76ba0dc2a07f491756377.mp4',
   'https://telegra.ph/file/831bb88f562bef3f1a15d.mp4',
   'https://telegra.ph/file/598857924f3a29ffd37ae.mp4',
-  'https://telegra.ph/file/528caef6ea950ec45aeef.mp4'
-]
-
-const videosxxxc2 = [
-  'https://telegra.ph/file/2dfb1ad0cab22951e30d1.mp4',
-  'https://telegra.ph/file/c430651857023968d3a76.mp4',
-  'https://telegra.ph/file/1ba17f6230dd1ea2de48c.mp4',
-  'https://telegra.ph/file/e04b802f12aafee3d314e.mp4',
-  'https://telegra.ph/file/a58661697d519d3d0acbd.mp4',
-  'https://telegra.ph/file/9ed60b18e79fcfebcd76c.mp4',
-  'https://telegra.ph/file/d58096000ad5eaef0b05e.mp4',
-  'https://telegra.ph/file/60b4c8ebeadebb7e0da06.mp4'
-]
+  'https://telegra.ph/file/528caef6ea950ec45aeef.mp4',
+];
+global.videosxxxc2 = [
+  "https://telegra.ph/file/2dfb1ad0cab22951e30d1.mp4",
+  "https://telegra.ph/file/c430651857023968d3a76.mp4",
+  "https://telegra.ph/file/1ba17f6230dd1ea2de48c.mp4",
+  "https://telegra.ph/file/e04b802f12aafee3d314e.mp4",
+  "https://telegra.ph/file/a58661697d519d3d0acbd.mp4",
+  "https://telegra.ph/file/9ed60b18e79fcfebcd76c.mp4",
+  "https://telegra.ph/file/d58096000ad5eaef0b05e.mp4",
+  "https://telegra.ph/file/60b4c8ebeadebb7e0da06.mp4"
+];
