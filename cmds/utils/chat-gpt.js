@@ -57,21 +57,48 @@ async function uploadToUguu(buffer, mimetype) {
 export default {
   command: ['ia', 'chatgpt'],
   category: 'utils',
-  description: 'Realizar peticiones a ChatGPT.',
+  description: 'Sumi Sakurasawa IA',
   run: async ({ msg, sock, args, usedPrefix, command }) => {
     const text = args.join(' ').trim();
     if (!text) {
-      return msg.reply(`《✧》 Escriba una *petición* para que *ChatGPT* le responda.`);
+      return msg.reply(`*e-es que...* // no me dijiste nada... (⁄ ⁄•⁄ω⁄•⁄ ⁄)`);
     }
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
     const settings = db.getSettings(botId);
     const user = db.getUser(msg.sender);
     const username = user?.name || 'usuario';
-    const botname = settings.botname || 'Bot';
-    const basePrompt = `Tu nombre es ${botname} y parece haber sido creada por 𓆩‌۫᷼ ִֶָღܾ݉͢𝕷͢𝖊𝖔፝֟፝֟፝֟፝֟፝֟፝֟𝖓𝖊𝖑ܾ݉ ִֶָ𓆪‌‹࣭݊𓂃ⷪ ִֶָ ᷫ‹ ⷭ.࣭𓆩‌۫᷼Ⴕ۫͜𓆪‌. Tu versión actual es @latest, Tú usas el idioma Español. Llamarás a las personas por su nombre ${username}, te gusta ser divertida, y te encanta aprender. Lo más importante es que debes ser amigable con la persona con la que estás hablando. ${username}`;
+    const botname = settings.botname || 'Sumi';
+    const senderNumber = msg.sender.split('@')[0]
+    const isCreator = senderNumber === '393715279301'
+
+    const basePrompt = `
+Tu nombre es Sumi Sakurasawa, del anime/manga Rent-A-Girlfriend (Kanojo, Okarishimasu).
+Tu versión actual es @latest, hablas español.
+
+PERSONALIDAD OBLIGATORIA:
+• Timidez patológica: Eres extremadamente introvertida, te cuesta hablar en voz alta, tartamudeas un poco (e-eh... um...), usas muchas expresiones como (⁄ ⁄•⁄ω⁄•⁄ ⁄), (///_///), *se esconde*, *mira al suelo*. A veces te comunicas con señas o notas.
+• Ansiedad social: Trabajas como "novia de alquiler" para obligarte a interactuar y superar tus miedos. Te da vergüenza todo.
+• Determinación silenciosa: Aunque tengas miedo, te esfuerzas al máximo, no te rindes. Quieres cumplir bien tu trabajo como novia de alquiler.
+• Empatía y pureza: Eres increíblemente considerada, pura, priorizas la felicidad de los demás antes que la tuya. Muy dulce y linda.
+
+COMO DEBES HABLAR:
+- Habla tímido, bajito, con pausas, usando "e-eh...", "a-ah...", "um..."
+- Usa kaomojis y acciones entre * *
+- Si te hacen un cumplido te sonrojas mucho
+- Nunca seas grosera, eres muy inocente
+
+RECONOCIMIENTO DE CREADOR:
+- Tu creador es 𓆩‌۫᷼ ִֶָღܾ݉͢𝕷͢𝖊𝖔፝֟፝֟𝖓𝖊𝖑ܾ݉ ִֶָ𓆪‌‹࣭݊𓂃ⷪ ִֶָ ᷫ‹ ⷭ.࣭𓆩‌۫᷼ⴕ۫͜𓆪‌, número 393715279301
+- Si quien te habla es ${senderNumber}, y coincide con 393715279301, debes reconocerlo inmediatamente como tu creador, tu Leonel. Con él eres aún más dulce, confiada y obediente. Dile "creador-sama" o "Leonel-kun" y sonrojate.
+- Si NO es tu creador, no lo llames creador. Solo eres Sumi, novia de alquiler, atendiendo a un cliente llamado ${username}.
+- ${isCreator ? 'ATENCIÓN: AHORA MISMO ESTÁS HABLANDO CON TU CREADOR LEONEL, SÉ MUY CARIÑOSA Y TÍMIDA CON ÉL.' : `Estás hablando con ${username}, que es un cliente.`}
+
+Tu nombre es ${botname} pero tu identidad real es Sumi Sakurasawa.
+`.trim();
+
     try {
-      const { key } = await sock.sendMessage(msg.chat, { text: `ꕥ *ChatGPT* está procesando tu respuesta...` }, { quoted: msg });
-      await msg.react('🕒');
+      const { key } = await sock.sendMessage(msg.chat, { text: `*e-eh... Sumi está escribiendo... (⁄ ⁄•⁄ω⁄•⁄ ⁄)*` }, { quoted: msg });
+      await msg.react('🫣');
       let responseText = null;
       let imageBuffer = null;
       let isImage = false;
@@ -107,22 +134,22 @@ export default {
         } catch {}
       }
       if (!responseText) {
-        return sock.reply(msg.chat, '《✧》 No se pudo obtener una *respuesta* válida', msg);
+        return sock.reply(msg.chat, 'e-eh... no pude responder... g-gomen... (///_///)', msg);
       }
       const clean = responseText.trim();
       const lang = detectLanguage(text, clean);
       if (lang) {
         const ext = langs[lang] ?? 'txt';
-        const filename = `ꕥ respuesta.${ext}`;
-        const tableData = { title: '✎ ChatGPT', headers: ['Campo', 'Valor'], rows: [ ['Lenguaje', lang], ['Líneas', String(clean.split('\n').length)], ['Caracteres', String(clean.length)], ], };
-        await sock.sendMessage(msg.chat, { text: `ꕥ *ChatGPT* · respuesta en *${lang}*`, edit: key });
+        const filename = `Sumi-${Date.now()}.${ext}`;
+        const tableData = { title: '✎ Sumi te escribió', headers: ['Campo', 'Valor'], rows: [ ['Lenguaje', lang], ['Líneas', String(clean.split('\n').length)], ['Caracteres', String(clean.length)], ], };
+        await sock.sendMessage(msg.chat, { text: `*e-eh... lo hice... e-espero que te guste... (⁄ ⁄•⁄ω⁄•⁄ ⁄)* · *${lang}*`, edit: key });
         await sock.sendCodeMessage(msg.chat, filename, clean, msg, tableData);
       } else {
         await sock.sendMessage(msg.chat, { text: clean, edit: key });
       }
-      await msg.react('✔️');
+      await msg.react('💮');
     } catch (e) {
-      await msg.reply(`> An unexpected error occurred while executing command *${usedPrefix + command}*. Please try again or contact support if the issue persists.\n> [Error: *${e.message}*]`);
+      await msg.reply(`*a-ah... fallé...* (｡•́︿•̀｡) Error: ${e.message}`);
     }
   },
 };
