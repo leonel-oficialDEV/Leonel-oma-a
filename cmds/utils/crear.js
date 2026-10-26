@@ -10,43 +10,41 @@ export default {
 
     try {
       await sock.sendMessage(msg.chat, { text: `🔨 Generando: ${text}` }, { quoted: msg });
-      
+
+      // 1. Generar
       const apiUrl = `https://eliasar-yt-api.vercel.app/api/ai/text2img?prompt=${encodeURIComponent(text)}`;
-      const res = await fetch(apiUrl);
-      
+      let res = await fetch(apiUrl);
       let buffer;
-      const cType = res.headers.get('content-type') || '';
-      if (cType.includes('json')) {
+
+      if ((res.headers.get('content-type')||'').includes('json')) {
         const json = await res.json();
         const imgUrl = json.url || json.image || json.result;
+        if (!imgUrl) throw new Error('API sin url');
         const imgRes = await fetch(imgUrl);
         buffer = Buffer.from(await imgRes.arrayBuffer());
       } else {
         buffer = Buffer.from(await res.arrayBuffer());
       }
 
-      // LO MANDAMOS COMO IMAGEN NORMAL, SIN VIEWONCE Y COMO JPG
+      // 2. Subir a catbox con FormData nativo (sin instalar nada)
+      const form = new FormData();
+      form.append('reqtype', 'fileupload');
+      form.append('fileToUpload', new Blob([buffer], { type: 'image/jpeg' }), 'crear.jpg');
+
+      const uploadRes = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: form });
+      const catboxUrl = (await uploadRes.text()).trim();
+      
+      if (!catboxUrl.startsWith('https://')) throw new Error('Fallo subida: ' + catboxUrl);
+
+      // 3. Mandar como URL, así WhatsApp lo ve bien y no da "imagen no disponible"
       await sock.sendMessage(msg.chat, {
-        image: buffer,
-        caption: `🖼️ *${text}*`,
-        mimetype: 'image/jpeg'
+        image: { url: catboxUrl },
+        caption: `🖼️ *${text}*`
       }, { quoted: msg });
 
     } catch (e) {
-      // Si falla como imagen, lo manda como documento que SIEMPRE abre
-      try {
-        const apiUrl = `https://eliasar-yt-api.vercel.app/api/ai/text2img?prompt=${encodeURIComponent(text)}`;
-        const res = await fetch(apiUrl);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        await sock.sendMessage(msg.chat, {
-          document: buffer,
-          mimetype: 'image/jpeg',
-          fileName: `${text.slice(0,20)}.jpg`,
-          caption: `🖼️ *${text}* (ábrelo, WhatsApp no deja verlo como foto por el formato webp)`
-        }, { quoted: msg });
-      } catch (e2) {
-        await sock.sendMessage(msg.chat, { text: `❌ Error: ${e.message}` }, { quoted: msg });
-      }
+      console.log(e);
+      await sock.sendMessage(msg.chat, { text: `❌ Error: ${e.message}` }, { quoted: msg });
     }
   }
 };
