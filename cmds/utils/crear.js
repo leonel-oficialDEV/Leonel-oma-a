@@ -6,17 +6,21 @@ export default {
   description: 'Crear imagen con IA',
   run: async ({ msg, sock, args, usedPrefix }) => {
     const text = args.join(' ').trim();
-    if (!text) return sock.sendMessage(msg.chat, { text: `❗ Usa: ${usedPrefix}crear un gato realista` }, { quoted: msg });
+    if (!text) return sock.sendMessage(msg.chat, { text: `❗ Usa: ${usedPrefix}crear un gato` }, { quoted: msg });
 
     try {
       await sock.sendMessage(msg.chat, { text: `🔨 Generando: ${text}` }, { quoted: msg });
 
-      // Pollinations - API estable, no se cae
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?width=1024&height=1024&model=flux&seed=${Math.floor(Math.random()*999999)}&nologo=true&enhance=true`;
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?width=1024&height=1024&model=flux&seed=${Math.floor(Math.random()*999999)}&nologo=true`;
 
-      // Mandamos directo el link, WhatsApp lo descarga y lo muestra HD sin cuadro negro
+      const res = await fetch(imageUrl);
+      if (!res.ok) throw new Error(`Pollinations ${res.status}`);
+      
+      const buffer = Buffer.from(await res.arrayBuffer());
+
       await sock.sendMessage(msg.chat, {
-        image: { url: imageUrl },
+        image: buffer,
+        mimetype: 'image/jpeg',
         caption: `🖼️ *${text}*`
       }, { quoted: msg });
 
