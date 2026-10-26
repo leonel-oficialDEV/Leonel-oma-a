@@ -11,34 +11,21 @@ export default {
     try {
       await sock.sendMessage(msg.chat, { text: `🔨 Generando: ${text}` }, { quoted: msg });
 
-      // 1. Generar
       const apiUrl = `https://eliasar-yt-api.vercel.app/api/ai/text2img?prompt=${encodeURIComponent(text)}`;
-      let res = await fetch(apiUrl);
-      let buffer;
+      const res = await fetch(apiUrl);
+      const json = await res.json();
+      
+      console.log(json);
 
-      if ((res.headers.get('content-type')||'').includes('json')) {
-        const json = await res.json();
-        const imgUrl = json.url || json.image || json.result;
-        if (!imgUrl) throw new Error('API sin url');
-        const imgRes = await fetch(imgUrl);
-        buffer = Buffer.from(await imgRes.arrayBuffer());
-      } else {
-        buffer = Buffer.from(await res.arrayBuffer());
+      const imageUrl = json.url || json.image || json.result || json.data?.url;
+
+      if (!imageUrl) {
+        return sock.sendMessage(msg.chat, { text: `❌ La API no devolvió imagen:\n${JSON.stringify(json).slice(0,500)}` }, { quoted: msg });
       }
 
-      // 2. Subir a catbox con FormData nativo (sin instalar nada)
-      const form = new FormData();
-      form.append('reqtype', 'fileupload');
-      form.append('fileToUpload', new Blob([buffer], { type: 'image/jpeg' }), 'crear.jpg');
-
-      const uploadRes = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: form });
-      const catboxUrl = (await uploadRes.text()).trim();
-      
-      if (!catboxUrl.startsWith('https://')) throw new Error('Fallo subida: ' + catboxUrl);
-
-      // 3. Mandar como URL, así WhatsApp lo ve bien y no da "imagen no disponible"
+      // Mandamos directo la URL que da la API, WhatsApp la descarga sola y no da cuadro negro
       await sock.sendMessage(msg.chat, {
-        image: { url: catboxUrl },
+        image: { url: imageUrl },
         caption: `🖼️ *${text}*`
       }, { quoted: msg });
 
