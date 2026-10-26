@@ -6,24 +6,15 @@ export default {
   description: 'Crear imagen con IA',
   run: async ({ msg, sock, args, usedPrefix }) => {
     const text = args.join(' ').trim();
-    if (!text) return sock.sendMessage(msg.chat, { text: `❗ Usa: ${usedPrefix}crear un gato` }, { quoted: msg });
+    if (!text) return sock.sendMessage(msg.chat, { text: `❗ Usa: ${usedPrefix}crear un gato realista` }, { quoted: msg });
 
     try {
       await sock.sendMessage(msg.chat, { text: `🔨 Generando: ${text}` }, { quoted: msg });
 
-      const apiUrl = `https://eliasar-yt-api.vercel.app/api/ai/text2img?prompt=${encodeURIComponent(text)}`;
-      const res = await fetch(apiUrl);
-      const json = await res.json();
-      
-      console.log(json);
+      // Pollinations - API estable, no se cae
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?width=1024&height=1024&model=flux&seed=${Math.floor(Math.random()*999999)}&nologo=true&enhance=true`;
 
-      const imageUrl = json.url || json.image || json.result || json.data?.url;
-
-      if (!imageUrl) {
-        return sock.sendMessage(msg.chat, { text: `❌ La API no devolvió imagen:\n${JSON.stringify(json).slice(0,500)}` }, { quoted: msg });
-      }
-
-      // Mandamos directo la URL que da la API, WhatsApp la descarga sola y no da cuadro negro
+      // Mandamos directo el link, WhatsApp lo descarga y lo muestra HD sin cuadro negro
       await sock.sendMessage(msg.chat, {
         image: { url: imageUrl },
         caption: `🖼️ *${text}*`
