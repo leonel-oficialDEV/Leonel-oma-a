@@ -24,7 +24,7 @@ const REPLACE_MIN_MS = 15_000;      // mínimo entre una solicitud y su reemplaz
 
 // Código de emparejamiento PERSONALIZADO. Déjalo '' para que sea aleatorio.
 
-const CUSTOM_PAIRING_CODE = '0ELAINA0';
+const CUSTOM_PAIRING_CODE = 'SUMIBOT0';
 
 const PAIRING_CODE_REGEX = /^[A-Z0-9]{8}$/;
 
