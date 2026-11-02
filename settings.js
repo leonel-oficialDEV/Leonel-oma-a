@@ -11,14 +11,6 @@ global.owner = ['393715279301', //
 '19426741096567@lid', //Tutankamon
 '524341073906', //edgar
 '529996220985', //Elezpya
-'', //capy2
-'', //shadow
-'', //alba
-'', //albabot
-
-
-
-'' // Zaako (user normal que me cayó muy bien y me dió lástima | att: Nether)
 ]
 
 global.dev = "Created by @mai";
